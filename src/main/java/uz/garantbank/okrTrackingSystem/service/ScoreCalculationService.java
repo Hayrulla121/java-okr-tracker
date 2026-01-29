@@ -1,14 +1,11 @@
 package uz.garantbank.okrTrackingSystem.service;
 
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-import uz.garantbank.okrTrackingSystem.dto.DepartmentScoreResult;
-import uz.garantbank.okrTrackingSystem.dto.ScoreResult;
+import uz.garantbank.okrTrackingSystem.dto.*;
 import uz.garantbank.okrTrackingSystem.entity.*;
 import uz.garantbank.okrTrackingSystem.repository.EvaluationRepository;
 import uz.garantbank.okrTrackingSystem.repository.ScoreLevelRepository;
-
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -18,15 +15,12 @@ import static java.lang.Double.parseDouble;
 @Slf4j
 @Service
 public class ScoreCalculationService {
-    @Autowired
-    private ScoreLevelRepository scoreLevelRepository;
-    @Autowired
-    private EvaluationRepository evaluationRepository;
 
+    private final ScoreLevelRepository scoreLevelRepository;
+    private final EvaluationRepository evaluationRepository;
 
     // Thread-local cache to avoid N+1 queries within a single request
     private final ThreadLocal<List<ScoreLevel>> scoreLevelCache = new ThreadLocal<>();
-
 
     public ScoreCalculationService(ScoreLevelRepository scoreLevelRepository, EvaluationRepository evaluationRepository) {
         this.scoreLevelRepository = scoreLevelRepository;
@@ -52,30 +46,27 @@ public class ScoreCalculationService {
         scoreLevelCache.remove();
     }
 
-    // Default fallback level definitions (used if DB is empty)
+    // Default fallback level definitions (used if DB is empty) - 0.0-1.0 normalized scale
     private static final Map<String, LevelInfo> DEFAULT_LEVELS = Map.of(
-            "below", new LevelInfo(3.0, 4.24, "#d9534f"),
-            "meets", new LevelInfo(4.25, 4.49, "#f0ad4e"),
-            "good", new LevelInfo(4.50, 4.74, "#5cb85c"),
-            "very_good", new LevelInfo(4.75, 4.99, "#28a745"),
-            "exceptional", new LevelInfo(5.00, 5.00, "#1e7b34")
+            "below", new LevelInfo(0.0, 0.24, "#d9534f"),
+            "meets", new LevelInfo(0.25, 0.49, "#f0ad4e"),
+            "good", new LevelInfo(0.50, 0.74, "#5cb85c"),
+            "very_good", new LevelInfo(0.75, 0.99, "#28a745"),
+            "exceptional", new LevelInfo(1.00, 1.00, "#1e7b34")
     );
 
-
-    record LevelInfo(double min, double max, String color) {}
-
-    // Qualitative grades mapping
+    // Qualitative grades mapping - 0.0-1.0 normalized scale
     private static final Map<String, QualitativeGrade> QUALITATIVE_GRADES = Map.of(
-            "A", new QualitativeGrade(5.00, "exceptional"),
-            "B", new QualitativeGrade(4.75, "very_good"),
-            "C", new QualitativeGrade(4.50, "good"),
-            "D", new QualitativeGrade(4.25, "meets"),
-            "E", new QualitativeGrade(3.00, "below")
+            "A", new QualitativeGrade(1.00, "exceptional"),
+            "B", new QualitativeGrade(0.75, "very_good"),
+            "C", new QualitativeGrade(0.50, "good"),
+            "D", new QualitativeGrade(0.25, "meets"),
+            "E", new QualitativeGrade(0.00, "below")
     );
-    record QualitativeGrade(double score, String level) {}
 
 
-    // Calculate the score for a kr
+    // calculate the score for a KR
+
     public ScoreResult calculateKeyResultScore(KeyResult kr) {
         if (kr.getMetricType() == KeyResult.MetricType.QUALITATIVE) {
             return calculateQualitativeScore(kr.getActualValue());
@@ -117,17 +108,57 @@ public class ScoreCalculationService {
 
     private ScoreResult calculateQualitativeScore(String grade) {
         String normalizedGrade = grade != null ? grade.toUpperCase().trim() : "E";
-        QualitativeGrade gradeInfo = QUALITATIVE_GRADES.getOrDefault(normalizedGrade,
-                QUALITATIVE_GRADES.get("E"));
+
+        // Get dynamic score levels
+        List<ScoreLevel> scoreLevels = getScoreLevels();
+
+        if (scoreLevels.isEmpty()) {
+            // Fallback to hardcoded values if no levels configured
+            QualitativeGrade gradeInfo = QUALITATIVE_GRADES.getOrDefault(normalizedGrade,
+                    QUALITATIVE_GRADES.get("E"));
+            return ScoreResult.builder()
+                    .score(gradeInfo.score())
+                    .level(gradeInfo.level())
+                    .color(getColorForLevel(gradeInfo.level()))
+                    .percentage(scoreToPercentage(gradeInfo.score()))
+                    .build();
+        }
+
+        // Sort levels by scoreValue to get proper ordering
+        List<ScoreLevel> sortedLevels = scoreLevels.stream()
+                .sorted(Comparator.comparingDouble(ScoreLevel::getScoreValue))
+                .toList();
+
+        // Map grades A-E to score levels dynamically
+        // A = highest (exceptional), E = lowest (below)
+        int numLevels = sortedLevels.size();
+        int levelIndex;
+        switch (normalizedGrade) {
+            case "A" -> levelIndex = numLevels - 1;  // Highest level
+            case "B" -> levelIndex = Math.min(numLevels - 2, numLevels - 1);
+            case "C" -> levelIndex = numLevels / 2;  // Middle level
+            case "D" -> levelIndex = Math.max(1, 0);
+            case "E" -> levelIndex = 0;  // Lowest level
+            default -> levelIndex = 0;
+        }
+
+        // Ensure index is within bounds
+        levelIndex = Math.max(0, Math.min(levelIndex, numLevels - 1));
+
+        ScoreLevel selectedLevel = sortedLevels.get(levelIndex);
+        double score = selectedLevel.getScoreValue();
+        String level = selectedLevel.getName().toLowerCase().replace(" ", "_");
 
         return ScoreResult.builder()
-                .score(gradeInfo.score())
-                .level(gradeInfo.level())
-                .color(getColorForLevel(gradeInfo.level()))
-                .percentage(scoreToPercentage(gradeInfo.score()))
+                .score(score)
+                .level(level)
+                .color(selectedLevel.getColor())
+                .percentage(scoreToPercentage(score))
                 .build();
     }
 
+
+    //!!!
     private ScoreResult calculateQuantitativeScore(
             double actual, KeyResult.MetricType type,
             Double below, Double meets, Double good, Double veryGood, Double exceptional) {
@@ -239,8 +270,9 @@ public class ScoreCalculationService {
             }
         }
 
-        double minScore = scoreLevels.get(0).getScoreValue();
-        double maxScore = scoreLevels.get(scoreLevels.size() - 1).getScoreValue();
+        // Find actual min/max from score levels (don't assume sort order)
+        double minScore = scoreLevels.stream().mapToDouble(ScoreLevel::getScoreValue).min().orElse(0.0);
+        double maxScore = scoreLevels.stream().mapToDouble(ScoreLevel::getScoreValue).max().orElse(1.0);
         score = Math.min(Math.max(score, minScore), maxScore);
         score = Math.round(score * 100.0) / 100.0;
 
@@ -251,6 +283,7 @@ public class ScoreCalculationService {
                 .percentage(scoreToPercentage(score))
                 .build();
     }
+
     // Helper class for threshold-score mapping
     private static class ThresholdScore {
         double threshold;
@@ -266,60 +299,67 @@ public class ScoreCalculationService {
             double actual, KeyResult.MetricType type,
             Double below, Double meets, Double good, Double veryGood, Double exceptional) {
 
+        // Default score values for 5 levels (0.0 to 1.0 normalized scale)
+        double scoreBelow = 0.0;
+        double scoreMeets = 0.25;
+        double scoreGood = 0.50;
+        double scoreVeryGood = 0.75;
+        double scoreExceptional = 1.0;
+
         double score;
         String level;
 
         if (type == KeyResult.MetricType.HIGHER_BETTER) {
             if (actual >= exceptional) {
-                score = 5.00;
+                score = scoreExceptional;
                 level = "exceptional";
             } else if (actual >= veryGood) {
                 double ratio = (actual - veryGood) / Math.max(exceptional - veryGood, 1);
-                score = 4.75 + ratio * 0.25;
+                score = scoreVeryGood + ratio * (scoreExceptional - scoreVeryGood);
                 level = "very_good";
             } else if (actual >= good) {
                 double ratio = (actual - good) / Math.max(veryGood - good, 1);
-                score = 4.50 + ratio * 0.25;
+                score = scoreGood + ratio * (scoreVeryGood - scoreGood);
                 level = "good";
             } else if (actual >= meets) {
                 double ratio = (actual - meets) / Math.max(good - meets, 1);
-                score = 4.25 + ratio * 0.25;
+                score = scoreMeets + ratio * (scoreGood - scoreMeets);
                 level = "meets";
             } else if (actual >= below) {
                 double ratio = (actual - below) / Math.max(meets - below, 1);
-                score = 3.00 + ratio * 1.25;
+                score = scoreBelow + ratio * (scoreMeets - scoreBelow);
                 level = "below";
             } else {
-                score = 3.00;
+                score = scoreBelow;
                 level = "below";
             }
         } else {
             if (actual <= exceptional) {
-                score = 5.00;
+                score = scoreExceptional;
                 level = "exceptional";
             } else if (actual <= veryGood) {
                 double ratio = 1 - (actual - exceptional) / Math.max(veryGood - exceptional, 1);
-                score = 4.75 + ratio * 0.25;
+                score = scoreVeryGood + ratio * (scoreExceptional - scoreVeryGood);
                 level = "very_good";
             } else if (actual <= good) {
                 double ratio = 1 - (actual - veryGood) / Math.max(good - veryGood, 1);
-                score = 4.50 + ratio * 0.25;
+                score = scoreGood + ratio * (scoreVeryGood - scoreGood);
                 level = "good";
             } else if (actual <= meets) {
                 double ratio = 1 - (actual - good) / Math.max(meets - good, 1);
-                score = 4.25 + ratio * 0.25;
+                score = scoreMeets + ratio * (scoreGood - scoreMeets);
                 level = "meets";
             } else if (actual <= below) {
                 double ratio = 1 - (actual - meets) / Math.max(below - meets, 1);
-                score = 3.00 + ratio * 1.25;
+                score = scoreBelow + ratio * (scoreMeets - scoreBelow);
                 level = "below";
             } else {
-                score = 3.00;
+                score = scoreBelow;
                 level = "below";
             }
         }
 
-        score = Math.min(Math.max(score, 3.0), 5.0);
+        score = Math.min(Math.max(score, scoreBelow), scoreExceptional);
         score = Math.round(score * 100.0) / 100.0;
 
         return ScoreResult.builder()
@@ -402,6 +442,14 @@ public class ScoreCalculationService {
     }
 
     private ScoreResult createScoreResult(double score) {
+        // Clamp score to min/max range from score levels
+        List<ScoreLevel> levels = getScoreLevels();
+        if (!levels.isEmpty()) {
+            double minScore = levels.stream().mapToDouble(ScoreLevel::getScoreValue).min().orElse(0.0);
+            double maxScore = levels.stream().mapToDouble(ScoreLevel::getScoreValue).max().orElse(1.0);
+            score = Math.min(Math.max(score, minScore), maxScore);
+        }
+
         String level = getLevelForScore(score);
         return ScoreResult.builder()
                 .score(Math.round(score * 100.0) / 100.0)
@@ -415,11 +463,11 @@ public class ScoreCalculationService {
         List<ScoreLevel> levels = getScoreLevels();
 
         if (levels.isEmpty()) {
-            // Fallback to default logic
-            if (score >= 5.00) return "exceptional";
-            if (score >= 4.75) return "very_good";
-            if (score >= 4.50) return "good";
-            if (score >= 4.25) return "meets";
+            // Fallback to default logic (0.0-1.0 normalized scale)
+            if (score >= 1.00) return "exceptional";
+            if (score >= 0.75) return "very_good";
+            if (score >= 0.50) return "good";
+            if (score >= 0.25) return "meets";
             return "below";
         }
 
@@ -453,12 +501,12 @@ public class ScoreCalculationService {
     private double scoreToPercentage(double score) {
         List<ScoreLevel> levels = getScoreLevels();
 
-        double minScore = 3.0;
-        double maxScore = 5.0;
+        double minScore = 0.0;
+        double maxScore = 1.0;
 
         if (!levels.isEmpty()) {
-            minScore = levels.get(0).getScoreValue();
-            maxScore = levels.get(levels.size() - 1).getScoreValue();
+            minScore = levels.stream().mapToDouble(ScoreLevel::getScoreValue).min().orElse(0.0);
+            maxScore = levels.stream().mapToDouble(ScoreLevel::getScoreValue).max().orElse(1.0);
         }
 
         double range = maxScore - minScore;
@@ -469,8 +517,20 @@ public class ScoreCalculationService {
 
     private ScoreResult emptyScore() {
         List<ScoreLevel> levels = getScoreLevels();
-        double minScore = levels.isEmpty() ? 4.25 : levels.get(0).getScoreValue();
-        String level = levels.isEmpty() ? "meets" : levels.get(0).getName().toLowerCase().replace(" ", "_");
+
+        double minScore;
+        String level;
+        if (levels.isEmpty()) {
+            minScore = 0.0;
+            level = "below";
+        } else {
+            // Find the level with the minimum score value
+            ScoreLevel minLevel = levels.stream()
+                    .min(Comparator.comparingDouble(ScoreLevel::getScoreValue))
+                    .orElse(levels.get(0));
+            minScore = minLevel.getScoreValue();
+            level = minLevel.getName().toLowerCase().replace(" ", "_");
+        }
 
         return ScoreResult.builder()
                 .score(minScore)
@@ -488,7 +548,8 @@ public class ScoreCalculationService {
         }
     }
 
-
+    record LevelInfo(double min, double max, String color) {}
+    record QualitativeGrade(double score, String level) {}
 
     // ============= NEW METHODS FOR MULTI-SOURCE EVALUATION =============
 
@@ -524,7 +585,7 @@ public class ScoreCalculationService {
         Double hrScore = hrLetter != null ? convertHrLetterToNumeric(hrLetter) : null;
         String hrComment = hrEval != null ? hrEval.getComment() : null;
 
-        // 5. Extract Business Block evaluation (stored as 1-5 stars, convert to 4.25-5.0 scale like Director)
+        // 5. Extract Business Block evaluation (stored as 1-5 stars, convert to dynamic score range)
         Evaluation businessBlockEval = evals.get(EvaluatorType.BUSINESS_BLOCK);
         Integer businessBlockStars = null;
         Double businessBlockScore = null;
@@ -534,8 +595,12 @@ public class ScoreCalculationService {
             Double storedRating = businessBlockEval.getNumericRating();
             if (storedRating != null) {
                 businessBlockStars = storedRating.intValue(); // The raw star value (1-5)
-                // Convert to 4.25-5.0 scale to match Director format: 4.25 + (stars - 1) * 0.1875
-                businessBlockScore = 4.25 + (businessBlockStars - 1) * 0.1875;
+                // Convert stars to score using dynamic levels
+                List<ScoreLevel> levels = getScoreLevels();
+                double minScore = levels.isEmpty() ? 0.0 : levels.stream().mapToDouble(ScoreLevel::getScoreValue).min().orElse(0.0);
+                double maxScore = levels.isEmpty() ? 1.0 : levels.stream().mapToDouble(ScoreLevel::getScoreValue).max().orElse(1.0);
+                // Map 1-5 stars to minScore-maxScore range
+                businessBlockScore = minScore + (businessBlockStars - 1) * (maxScore - minScore) / 4.0;
             }
             businessBlockComment = businessBlockEval.getComment();
         }
@@ -600,29 +665,67 @@ public class ScoreCalculationService {
     }
 
     /**
-     * Convert HR letter grade to numeric score
-     * A = 5.0 (Outstanding), B = 4.75 (Exceeds), C = 4.5 (Meets), D = 4.25 (Needs Improvement)
+     * Convert HR letter grade to numeric score using dynamic score levels
+     * A = highest (exceptional), B = very_good, C = good, D = meets/lowest
      */
     private Double convertHrLetterToNumeric(String letter) {
+        List<ScoreLevel> scoreLevels = getScoreLevels();
+
+        if (scoreLevels.isEmpty()) {
+            // Fallback to 0.0-1.0 normalized scale
+            return switch(letter) {
+                case "A" -> 1.0;
+                case "B" -> 0.75;
+                case "C" -> 0.5;
+                case "D" -> 0.25;
+                default -> null;
+            };
+        }
+
+        // Sort levels by scoreValue
+        List<ScoreLevel> sortedLevels = scoreLevels.stream()
+                .sorted(Comparator.comparingDouble(ScoreLevel::getScoreValue))
+                .toList();
+
+        int numLevels = sortedLevels.size();
         return switch(letter) {
-            case "A" -> 5.0;
-            case "B" -> 4.75;
-            case "C" -> 4.5;
-            case "D" -> 4.25;
+            case "A" -> sortedLevels.get(numLevels - 1).getScoreValue();  // Highest
+            case "B" -> sortedLevels.get(Math.max(numLevels - 2, 0)).getScoreValue();
+            case "C" -> sortedLevels.get(numLevels / 2).getScoreValue();  // Middle
+            case "D" -> sortedLevels.get(Math.min(1, numLevels - 1)).getScoreValue();
             default -> null;
         };
     }
 
     /**
-     * Convert Director numeric score (4.25-5.0) back to star rating (1-5) for UI display
+     * Convert Director numeric score back to star rating (1-5) for UI display
+     * Uses dynamic score levels to determine the range
      */
     private Integer convertNumericToStars(Double numericScore) {
-        if (numericScore == null || numericScore < 4.25 || numericScore > 5.0) {
+        if (numericScore == null) {
             return null;
         }
-        // Reverse formula: stars = 1 + (numericScore - 4.25) / 0.1875
-        double stars = 1 + (numericScore - 4.25) / 0.1875;
+
+        List<ScoreLevel> scoreLevels = getScoreLevels();
+
+        double minScore, maxScore;
+        if (scoreLevels.isEmpty()) {
+            minScore = 0.0;
+            maxScore = 1.0;
+        } else {
+            minScore = scoreLevels.stream().mapToDouble(ScoreLevel::getScoreValue).min().orElse(0.0);
+            maxScore = scoreLevels.stream().mapToDouble(ScoreLevel::getScoreValue).max().orElse(1.0);
+        }
+
+        if (numericScore < minScore || numericScore > maxScore) {
+            return null;
+        }
+
+        // Map score to 1-5 star range
+        double range = maxScore - minScore;
+        if (range == 0) return 5;
+
+        double stars = 1 + ((numericScore - minScore) / range) * 4;
         return (int) Math.round(stars);
     }
-
 }

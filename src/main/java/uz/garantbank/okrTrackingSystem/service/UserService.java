@@ -1,5 +1,15 @@
 package uz.garantbank.okrTrackingSystem.service;
 
+
+import uz.garantbank.okrTrackingSystem.dto.*;
+import uz.garantbank.okrTrackingSystem.dto.user.*;
+import uz.garantbank.okrTrackingSystem.entity.Department;
+import uz.garantbank.okrTrackingSystem.entity.Role;
+import uz.garantbank.okrTrackingSystem.entity.ScoreLevel;
+import uz.garantbank.okrTrackingSystem.entity.User;
+import uz.garantbank.okrTrackingSystem.repository.DepartmentRepository;
+import uz.garantbank.okrTrackingSystem.repository.ScoreLevelRepository;
+import uz.garantbank.okrTrackingSystem.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -8,16 +18,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
-import uz.garantbank.okrTrackingSystem.dto.*;
-import uz.garantbank.okrTrackingSystem.dto.user.CreateUserRequest;
-import uz.garantbank.okrTrackingSystem.dto.user.DepartmentSummaryDTO;
-import uz.garantbank.okrTrackingSystem.dto.user.UpdateUserRequest;
-import uz.garantbank.okrTrackingSystem.dto.user.UserProfileDTO;
-import uz.garantbank.okrTrackingSystem.entity.Department;
-import uz.garantbank.okrTrackingSystem.entity.Role;
-import uz.garantbank.okrTrackingSystem.entity.User;
-import uz.garantbank.okrTrackingSystem.repository.DepartmentRepository;
-import uz.garantbank.okrTrackingSystem.repository.UserRepository;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -32,6 +32,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final DepartmentRepository departmentRepository;
+    private final ScoreLevelRepository scoreLevelRepository;
     private final PasswordEncoder passwordEncoder;
     private final FileUploadService fileUploadService;
     private final ScoreCalculationService scoreCalculationService;
@@ -184,14 +185,12 @@ public class UserService {
      */
     @Transactional
     public UserDTO assignDepartments(UUID userId, List<String> departmentIds) {
-        // 1. Fetch user with their departments (uses JOIN FETCH)
         User user = userRepository.findByIdWithDepartments(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
-        // 2. CLEAR all existing department assignments
+
         user.getAssignedDepartments().clear();
-        // 3. Assign new departments using internal helper
         assignDepartmentsInternal(user, departmentIds);
-        // 4. Save and return
+
         user = userRepository.save(user);
         return convertToDTO(user);
     }
@@ -201,12 +200,10 @@ public class UserService {
      */
     @Transactional
     public UserDTO removeDepartment(UUID userId, String departmentId) {
-        // fetch users with departments
         User user = userRepository.findByIdWithDepartments(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
-        // remove specific department with remove if
+
         user.getAssignedDepartments().removeIf(d -> d.getId().equals(departmentId));
-        // save and return
         user = userRepository.save(user);
         return convertToDTO(user);
     }
@@ -336,10 +333,8 @@ public class UserService {
      */
     private void assignDepartmentsInternal(User user, List<String> departmentIds) {
         for (String deptId : departmentIds) {
-            // 1. Find each department by ID
             Department dept = departmentRepository.findById(deptId)
                     .orElseThrow(() -> new EntityNotFoundException("Department not found: " + deptId));
-            // 2. Add department to user's collection
             user.getAssignedDepartments().add(dept);
         }
     }
@@ -479,36 +474,77 @@ public class UserService {
     }
 
     /**
-     * Get score level for a given score value
+     * Get score level for a given score value using dynamic score levels
      */
     private String getLevelForScore(double score) {
-        if (score >= 5.00) return "exceptional";
-        if (score >= 4.75) return "very_good";
-        if (score >= 4.50) return "good";
-        if (score >= 4.25) return "meets";
-        return "below";
+        List<ScoreLevel> levels = scoreLevelRepository.findAllByOrderByDisplayOrderAsc();
+
+        if (levels.isEmpty()) {
+            // Fallback to default logic
+            if (score >= 5.00) return "exceptional";
+            if (score >= 4.75) return "very_good";
+            if (score >= 4.50) return "good";
+            if (score >= 4.25) return "meets";
+            return "below";
+        }
+
+        // Sort by score value descending to find the appropriate level
+        List<ScoreLevel> sortedLevels = levels.stream()
+                .sorted(Comparator.comparingDouble(ScoreLevel::getScoreValue).reversed())
+                .toList();
+
+        for (ScoreLevel level : sortedLevels) {
+            if (score >= level.getScoreValue()) {
+                return level.getName().toLowerCase().replace(" ", "_");
+            }
+        }
+
+        return sortedLevels.get(sortedLevels.size() - 1).getName().toLowerCase().replace(" ", "_");
     }
 
     /**
-     * Get color for a given score level
+     * Get color for a given score level using dynamic score levels
      */
     private String getColorForLevel(String level) {
-        return switch (level) {
-            case "exceptional" -> "#1e7b34";
-            case "very_good" -> "#28a745";
-            case "good" -> "#5cb85c";
-            case "meets" -> "#f0ad4e";
-            default -> "#d9534f";
-        };
+        List<ScoreLevel> levels = scoreLevelRepository.findAllByOrderByDisplayOrderAsc();
+
+        if (levels.isEmpty()) {
+            return switch (level) {
+                case "exceptional" -> "#1e7b34";
+                case "very_good" -> "#28a745";
+                case "good" -> "#5cb85c";
+                case "meets" -> "#f0ad4e";
+                default -> "#d9534f";
+            };
+        }
+
+        String normalizedLevel = level.replace("_", " ");
+        for (ScoreLevel scoreLevel : levels) {
+            if (scoreLevel.getName().equalsIgnoreCase(normalizedLevel)) {
+                return scoreLevel.getColor();
+            }
+        }
+
+        return levels.get(0).getColor();
     }
 
     /**
-     * Convert score to percentage (based on 3.0-5.0 range)
+     * Convert score to percentage using dynamic score levels
      */
     private double scoreToPercentage(double score) {
+        List<ScoreLevel> levels = scoreLevelRepository.findAllByOrderByDisplayOrderAsc();
+
         double minScore = 3.0;
         double maxScore = 5.0;
+
+        if (!levels.isEmpty()) {
+            minScore = levels.stream().mapToDouble(ScoreLevel::getScoreValue).min().orElse(3.0);
+            maxScore = levels.stream().mapToDouble(ScoreLevel::getScoreValue).max().orElse(5.0);
+        }
+
         double range = maxScore - minScore;
+        if (range == 0) return 0.0;
+
         return Math.round(((score - minScore) / range) * 1000.0) / 10.0;
     }
 }

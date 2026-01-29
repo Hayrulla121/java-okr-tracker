@@ -23,13 +23,13 @@ public class ExcelExportService {
 
     private final ScoreLevelRepository scoreLevelRepository;
 
-    // Default score levels if none in database
+    // Default score levels if none in database (0.0-1.0 normalized scale)
     private static final List<DefaultLevel> DEFAULT_LEVELS = List.of(
-            new DefaultLevel("Ниже нормы", 3.0, "#dc3545"),
-            new DefaultLevel("Норма", 4.25, "#f0ad4e"),
-            new DefaultLevel("Хорошо", 4.5, "#5cb85c"),
-            new DefaultLevel("Очень хорошо", 4.75, "#28a745"),
-            new DefaultLevel("Исключительно", 5.0, "#1e7b34")
+            new DefaultLevel("Below", 0.0, "#dc3545"),
+            new DefaultLevel("Meets", 0.25, "#f0ad4e"),
+            new DefaultLevel("Good", 0.50, "#5cb85c"),
+            new DefaultLevel("Very Good", 0.75, "#28a745"),
+            new DefaultLevel("Exceptional", 1.0, "#1e7b34")
     );
 
     public ExcelExportService(ScoreLevelRepository scoreLevelRepository) {
@@ -155,7 +155,7 @@ public class ExcelExportService {
 
                         // Actual value as number for formulas
                         Cell actualCell = row.createCell(5);
-                        if (kr.getMetricType() == KeyResult.MetricType.QUALITATIVE) {
+                        if (kr.getMetricType() == MetricType.QUALITATIVE) {
                             actualCell.setCellValue(kr.getActualValue() != null ? kr.getActualValue() : "E");
                         } else {
                             try {
@@ -170,7 +170,7 @@ public class ExcelExportService {
                         row.createCell(6).setCellValue(kr.getUnit() != null ? kr.getUnit() : "");
 
                         // Thresholds - dynamic based on number of levels
-                        if (kr.getMetricType() == KeyResult.MetricType.QUALITATIVE) {
+                        if (kr.getMetricType() == MetricType.QUALITATIVE) {
                             // For qualitative, use letter grades mapped to levels
                             String[] grades = {"E", "D", "C", "B", "A"};
                             for (int i = 0; i < numLevels; i++) {

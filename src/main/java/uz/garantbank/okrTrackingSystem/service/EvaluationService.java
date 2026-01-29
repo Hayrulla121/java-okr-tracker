@@ -1,17 +1,20 @@
 package uz.garantbank.okrTrackingSystem.service;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+
 import uz.garantbank.okrTrackingSystem.dto.EvaluationCreateRequest;
 import uz.garantbank.okrTrackingSystem.dto.EvaluationDTO;
 import uz.garantbank.okrTrackingSystem.entity.*;
 import uz.garantbank.okrTrackingSystem.repository.EvaluationRepository;
+import uz.garantbank.okrTrackingSystem.repository.ScoreLevelRepository;
 import uz.garantbank.okrTrackingSystem.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+
 /**
  * Service for managing evaluations
  */
@@ -23,8 +26,10 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class EvaluationService {
+
     private final EvaluationRepository evaluationRepository;
     private final UserRepository userRepository;
+    private final ScoreLevelRepository scoreLevelRepository;
 
     /**
      * Migrate any DRAFT evaluations to SUBMITTED status on application startup.
@@ -250,10 +255,13 @@ public class EvaluationService {
      * Validate rating based on evaluator type
      */
     private void validateRating(EvaluatorType evaluatorType, Double numericRating, String letterRating) {
+        double minScore = getMinScore();
+        double maxScore = getMaxScore();
+
         switch (evaluatorType) {
             case DIRECTOR:
-                if (numericRating == null || numericRating < 4.25 || numericRating > 5.0) {
-                    throw new IllegalArgumentException("Director rating must be between 4.25 and 5.0");
+                if (numericRating == null || numericRating < minScore || numericRating > maxScore) {
+                    throw new IllegalArgumentException("Director rating must be between " + minScore + " and " + maxScore);
                 }
                 break;
             case HR:
@@ -270,13 +278,38 @@ public class EvaluationService {
     }
 
     /**
-     * Convert star rating (1-5) to numeric score (4.25-5.0)
+     * Convert star rating (1-5) to numeric score using dynamic score levels
      */
     private Double convertStarsToNumeric(Integer stars) {
         if (stars < 1 || stars > 5) {
             throw new IllegalArgumentException("Star rating must be between 1 and 5");
         }
-        return 4.25 + (stars - 1) * 0.1875;
+        double minScore = getMinScore();
+        double maxScore = getMaxScore();
+        // Map 1-5 stars to minScore-maxScore range
+        return minScore + (stars - 1) * (maxScore - minScore) / 4.0;
+    }
+
+    /**
+     * Get minimum score from dynamic score levels
+     */
+    private double getMinScore() {
+        List<ScoreLevel> levels = scoreLevelRepository.findAllByOrderByDisplayOrderAsc();
+        if (levels.isEmpty()) {
+            return 0.0; // Default fallback (0.0-1.0 normalized scale)
+        }
+        return levels.stream().mapToDouble(ScoreLevel::getScoreValue).min().orElse(0.0);
+    }
+
+    /**
+     * Get maximum score from dynamic score levels
+     */
+    private double getMaxScore() {
+        List<ScoreLevel> levels = scoreLevelRepository.findAllByOrderByDisplayOrderAsc();
+        if (levels.isEmpty()) {
+            return 1.0; // Default fallback (0.0-1.0 normalized scale)
+        }
+        return levels.stream().mapToDouble(ScoreLevel::getScoreValue).max().orElse(1.0);
     }
 
     /**
@@ -298,6 +331,4 @@ public class EvaluationService {
                 .updatedAt(evaluation.getUpdatedAt())
                 .build();
     }
-
-
 }
