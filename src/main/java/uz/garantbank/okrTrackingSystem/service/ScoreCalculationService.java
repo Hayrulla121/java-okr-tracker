@@ -1,0 +1,628 @@
+package uz.garantbank.okrTrackingSystem.service;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import uz.garantbank.okrTrackingSystem.dto.DepartmentScoreResult;
+import uz.garantbank.okrTrackingSystem.dto.ScoreResult;
+import uz.garantbank.okrTrackingSystem.entity.*;
+import uz.garantbank.okrTrackingSystem.repository.EvaluationRepository;
+import uz.garantbank.okrTrackingSystem.repository.ScoreLevelRepository;
+
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import static java.lang.Double.parseDouble;
+
+@Slf4j
+@Service
+public class ScoreCalculationService {
+    @Autowired
+    private ScoreLevelRepository scoreLevelRepository;
+    @Autowired
+    private EvaluationRepository evaluationRepository;
+
+
+    // Thread-local cache to avoid N+1 queries within a single request
+    private final ThreadLocal<List<ScoreLevel>> scoreLevelCache = new ThreadLocal<>();
+
+
+    public ScoreCalculationService(ScoreLevelRepository scoreLevelRepository, EvaluationRepository evaluationRepository) {
+        this.scoreLevelRepository = scoreLevelRepository;
+        this.evaluationRepository = evaluationRepository;
+    }
+
+    /**
+     * Get score levels with caching to avoid N+1 queries
+     */
+    private List<ScoreLevel> getScoreLevels() {
+        List<ScoreLevel> cached = scoreLevelCache.get();
+        if (cached == null) {
+            cached = scoreLevelRepository.findAllByOrderByDisplayOrderAsc();
+            scoreLevelCache.set(cached);
+        }
+        return cached;
+    }
+
+    /**
+     * Clear the thread-local cache (should be called after processing a request)
+     */
+    public void clearCache() {
+        scoreLevelCache.remove();
+    }
+
+    // Default fallback level definitions (used if DB is empty)
+    private static final Map<String, LevelInfo> DEFAULT_LEVELS = Map.of(
+            "below", new LevelInfo(3.0, 4.24, "#d9534f"),
+            "meets", new LevelInfo(4.25, 4.49, "#f0ad4e"),
+            "good", new LevelInfo(4.50, 4.74, "#5cb85c"),
+            "very_good", new LevelInfo(4.75, 4.99, "#28a745"),
+            "exceptional", new LevelInfo(5.00, 5.00, "#1e7b34")
+    );
+
+
+    record LevelInfo(double min, double max, String color) {}
+
+    // Qualitative grades mapping
+    private static final Map<String, QualitativeGrade> QUALITATIVE_GRADES = Map.of(
+            "A", new QualitativeGrade(5.00, "exceptional"),
+            "B", new QualitativeGrade(4.75, "very_good"),
+            "C", new QualitativeGrade(4.50, "good"),
+            "D", new QualitativeGrade(4.25, "meets"),
+            "E", new QualitativeGrade(3.00, "below")
+    );
+    record QualitativeGrade(double score, String level) {}
+
+
+    // Calculate the score for a kr
+    public ScoreResult calculateKeyResultScore(KeyResult kr) {
+        if (kr.getMetricType() == KeyResult.MetricType.QUALITATIVE) {
+            return calculateQualitativeScore(kr.getActualValue());
+        }
+
+        String actualValueStr = kr.getActualValue();
+        if (actualValueStr == null || actualValueStr.trim().isEmpty()) {
+            actualValueStr = "0";
+        }
+
+        double actualValue;
+        try {
+            actualValue = parseDouble(actualValueStr);
+        } catch (NumberFormatException e) {
+            log.warn("Invalid actual value '{}' for KR '{}', defaulting to 0", actualValueStr, kr.getName());
+            actualValue = 0;
+        }
+
+        // Log calculation inputs for debugging
+        log.debug("Calculating score for KR '{}': actual={}, type={}, thresholds=[below={}, meets={}, good={}, veryGood={}, exceptional={}]",
+                kr.getName(), actualValue, kr.getMetricType(),
+                kr.getThresholdBelow(), kr.getThresholdMeets(), kr.getThresholdGood(),
+                kr.getThresholdVeryGood(), kr.getThresholdExceptional());
+
+        ScoreResult result = calculateQuantitativeScore(
+                actualValue,
+                kr.getMetricType(),
+                kr.getThresholdBelow(),
+                kr.getThresholdMeets(),
+                kr.getThresholdGood(),
+                kr.getThresholdVeryGood(),
+                kr.getThresholdExceptional()
+        );
+
+        log.debug("KR '{}' score result: score={}, level={}", kr.getName(), result.getScore(), result.getLevel());
+
+        return result;
+    }
+
+    private ScoreResult calculateQualitativeScore(String grade) {
+        String normalizedGrade = grade != null ? grade.toUpperCase().trim() : "E";
+        QualitativeGrade gradeInfo = QUALITATIVE_GRADES.getOrDefault(normalizedGrade,
+                QUALITATIVE_GRADES.get("E"));
+
+        return ScoreResult.builder()
+                .score(gradeInfo.score())
+                .level(gradeInfo.level())
+                .color(getColorForLevel(gradeInfo.level()))
+                .percentage(scoreToPercentage(gradeInfo.score()))
+                .build();
+    }
+
+    private ScoreResult calculateQuantitativeScore(
+            double actual, KeyResult.MetricType type,
+            Double below, Double meets, Double good, Double veryGood, Double exceptional) {
+
+        // Handle null threshold values with sensible defaults
+        // For LOWER_BETTER: thresholds should be in descending order (below > meets > good > veryGood > exceptional)
+        // For HIGHER_BETTER: thresholds should be in ascending order (below < meets < good < veryGood < exceptional)
+        if (below == null) below = (type == KeyResult.MetricType.LOWER_BETTER) ? 100.0 : 0.0;
+        if (meets == null) meets = (type == KeyResult.MetricType.LOWER_BETTER) ? 75.0 : 25.0;
+        if (good == null) good = 50.0;
+        if (veryGood == null) veryGood = (type == KeyResult.MetricType.LOWER_BETTER) ? 25.0 : 75.0;
+        if (exceptional == null) exceptional = (type == KeyResult.MetricType.LOWER_BETTER) ? 0.0 : 100.0;
+
+        // Get dynamic score levels from database (cached)
+        List<ScoreLevel> scoreLevels = getScoreLevels();
+
+        // If no custom levels, use default threshold-to-score mapping
+        if (scoreLevels.isEmpty()) {
+            return calculateWithDefaultLevels(actual, type, below, meets, good, veryGood, exceptional);
+        }
+
+        // Create threshold-to-score-level mapping
+        // Map the 5 backend thresholds to dynamic score levels
+        // scoreLevels are sorted by scoreValue ascending: [lowest, ..., highest]
+        int numLevels = scoreLevels.size();
+
+        // Build a list of threshold-score pairs, sorted by threshold value
+        // For missing thresholds (null), we'll skip them
+        List<ThresholdScore> thresholdScores = new ArrayList<>();
+
+        if (below != null) thresholdScores.add(new ThresholdScore(below, 0));
+        if (meets != null) thresholdScores.add(new ThresholdScore(meets, Math.min(1, numLevels - 1)));
+        if (good != null) thresholdScores.add(new ThresholdScore(good, Math.min(2, numLevels - 1)));
+        if (veryGood != null) thresholdScores.add(new ThresholdScore(veryGood, Math.min(3, numLevels - 1)));
+        if (exceptional != null) thresholdScores.add(new ThresholdScore(exceptional, numLevels - 1));
+
+        // Sort thresholds based on metric type
+        if (type == KeyResult.MetricType.HIGHER_BETTER) {
+            thresholdScores.sort(Comparator.comparingDouble(ts -> ts.threshold));
+        } else {
+            thresholdScores.sort((ts1, ts2) -> Double.compare(ts2.threshold, ts1.threshold));
+        }
+
+        // Find which range the actual value falls into
+        double score = scoreLevels.get(0).getScoreValue();
+        String level = scoreLevels.get(0).getName().toLowerCase().replace(" ", "_");
+
+        if (type == KeyResult.MetricType.HIGHER_BETTER) {
+            // For HIGHER_BETTER, check from highest to lowest threshold
+            boolean found = false;
+            for (int i = thresholdScores.size() - 1; i >= 0; i--) {
+                ThresholdScore ts = thresholdScores.get(i);
+                if (actual >= ts.threshold) {
+                    int scoreIdx = ts.scoreLevelIndex;
+
+                    // If at the highest level, assign that score directly
+                    if (i == thresholdScores.size() - 1) {
+                        score = scoreLevels.get(scoreIdx).getScoreValue();
+                        level = scoreLevels.get(scoreIdx).getName().toLowerCase().replace(" ", "_");
+                    } else {
+                        // Interpolate between current and next threshold
+                        ThresholdScore nextTs = thresholdScores.get(i + 1);
+                        double ratio = (actual - ts.threshold) / Math.max(nextTs.threshold - ts.threshold, 0.001);
+                        double startScore = scoreLevels.get(scoreIdx).getScoreValue();
+                        double endScore = scoreLevels.get(nextTs.scoreLevelIndex).getScoreValue();
+                        score = startScore + ratio * (endScore - startScore);
+                        level = scoreLevels.get(scoreIdx).getName().toLowerCase().replace(" ", "_");
+                    }
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                // Below all thresholds
+                score = scoreLevels.get(0).getScoreValue();
+                level = scoreLevels.get(0).getName().toLowerCase().replace(" ", "_");
+            }
+        } else {
+            // For LOWER_BETTER, check from lowest to highest threshold (reversed)
+            boolean found = false;
+            for (int i = thresholdScores.size() - 1; i >= 0; i--) {
+                ThresholdScore ts = thresholdScores.get(i);
+                if (actual <= ts.threshold) {
+                    int scoreIdx = ts.scoreLevelIndex;
+
+                    // If at the best (lowest) level, assign that score directly
+                    if (i == thresholdScores.size() - 1) {
+                        score = scoreLevels.get(scoreIdx).getScoreValue();
+                        level = scoreLevels.get(scoreIdx).getName().toLowerCase().replace(" ", "_");
+                    } else {
+                        // Interpolate between current and next threshold
+                        ThresholdScore nextTs = thresholdScores.get(i + 1);
+                        double ratio = 1 - (actual - nextTs.threshold) / Math.max(ts.threshold - nextTs.threshold, 0.001);
+                        double startScore = scoreLevels.get(scoreIdx).getScoreValue();
+                        double endScore = scoreLevels.get(nextTs.scoreLevelIndex).getScoreValue();
+                        score = startScore + ratio * (endScore - startScore);
+                        level = scoreLevels.get(scoreIdx).getName().toLowerCase().replace(" ", "_");
+                    }
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                // Above all thresholds (worst for LOWER_BETTER)
+                score = scoreLevels.get(0).getScoreValue();
+                level = scoreLevels.get(0).getName().toLowerCase().replace(" ", "_");
+            }
+        }
+
+        double minScore = scoreLevels.get(0).getScoreValue();
+        double maxScore = scoreLevels.get(scoreLevels.size() - 1).getScoreValue();
+        score = Math.min(Math.max(score, minScore), maxScore);
+        score = Math.round(score * 100.0) / 100.0;
+
+        return ScoreResult.builder()
+                .score(score)
+                .level(level)
+                .color(getColorForLevel(level))
+                .percentage(scoreToPercentage(score))
+                .build();
+    }
+    // Helper class for threshold-score mapping
+    private static class ThresholdScore {
+        double threshold;
+        int scoreLevelIndex;
+
+        ThresholdScore(double threshold, int scoreLevelIndex) {
+            this.threshold = threshold;
+            this.scoreLevelIndex = scoreLevelIndex;
+        }
+    }
+
+    private ScoreResult calculateWithDefaultLevels(
+            double actual, KeyResult.MetricType type,
+            Double below, Double meets, Double good, Double veryGood, Double exceptional) {
+
+        double score;
+        String level;
+
+        if (type == KeyResult.MetricType.HIGHER_BETTER) {
+            if (actual >= exceptional) {
+                score = 5.00;
+                level = "exceptional";
+            } else if (actual >= veryGood) {
+                double ratio = (actual - veryGood) / Math.max(exceptional - veryGood, 1);
+                score = 4.75 + ratio * 0.25;
+                level = "very_good";
+            } else if (actual >= good) {
+                double ratio = (actual - good) / Math.max(veryGood - good, 1);
+                score = 4.50 + ratio * 0.25;
+                level = "good";
+            } else if (actual >= meets) {
+                double ratio = (actual - meets) / Math.max(good - meets, 1);
+                score = 4.25 + ratio * 0.25;
+                level = "meets";
+            } else if (actual >= below) {
+                double ratio = (actual - below) / Math.max(meets - below, 1);
+                score = 3.00 + ratio * 1.25;
+                level = "below";
+            } else {
+                score = 3.00;
+                level = "below";
+            }
+        } else {
+            if (actual <= exceptional) {
+                score = 5.00;
+                level = "exceptional";
+            } else if (actual <= veryGood) {
+                double ratio = 1 - (actual - exceptional) / Math.max(veryGood - exceptional, 1);
+                score = 4.75 + ratio * 0.25;
+                level = "very_good";
+            } else if (actual <= good) {
+                double ratio = 1 - (actual - veryGood) / Math.max(good - veryGood, 1);
+                score = 4.50 + ratio * 0.25;
+                level = "good";
+            } else if (actual <= meets) {
+                double ratio = 1 - (actual - good) / Math.max(meets - good, 1);
+                score = 4.25 + ratio * 0.25;
+                level = "meets";
+            } else if (actual <= below) {
+                double ratio = 1 - (actual - meets) / Math.max(below - meets, 1);
+                score = 3.00 + ratio * 1.25;
+                level = "below";
+            } else {
+                score = 3.00;
+                level = "below";
+            }
+        }
+
+        score = Math.min(Math.max(score, 3.0), 5.0);
+        score = Math.round(score * 100.0) / 100.0;
+
+        return ScoreResult.builder()
+                .score(score)
+                .level(level)
+                .color(getColorForLevel(level))
+                .percentage(scoreToPercentage(score))
+                .build();
+    }
+
+    /**
+     * Calculate weighted score for an Objective (weighted average of KR scores)
+     * Formula: OKR = (KR1 × weight1) + (KR2 × weight2) + (KR3 × weight3) / totalWeight
+     * Example: KR1(4.5 × 60%) + KR2(4.7 × 30%) + KR3(4.8 × 10%) = 4.59
+     */
+    public ScoreResult calculateObjectiveScore(Collection<KeyResult> keyResults) {
+        if (keyResults == null || keyResults.isEmpty()) {
+            return emptyScore();
+        }
+
+        double weightedSum = 0;
+        double totalWeight = 0;
+
+        for (KeyResult kr : keyResults) {
+            ScoreResult krScore = calculateKeyResultScore(kr);
+            double weight = kr.getWeight() != null ? kr.getWeight() : 0;
+            weightedSum += krScore.getScore() * weight;
+            totalWeight += weight;
+        }
+
+        double avgScore;
+        if (totalWeight > 0) {
+            // Weighted average: sum(score × weight) / sum(weights)
+            avgScore = weightedSum / totalWeight;
+        } else {
+            // Fallback to simple average if no weights defined
+            double total = 0;
+            for (KeyResult kr : keyResults) {
+                total += calculateKeyResultScore(kr).getScore();
+            }
+            avgScore = total / keyResults.size();
+        }
+
+        return createScoreResult(avgScore);
+    }
+    /**
+     * Calculate weighted score for a Department
+     */
+    public ScoreResult calculateDepartmentScore(Collection<Objective> objectives) {
+        if (objectives == null || objectives.isEmpty()) {
+            return emptyScore();
+        }
+
+        double weightedSum = 0;
+        double totalWeight = 0;
+
+        // Count objectives with key results for default weight calculation
+        long objectivesWithKRs = objectives.stream()
+                .filter(obj -> obj.getKeyResults() != null && !obj.getKeyResults().isEmpty())
+                .count();
+
+        if (objectivesWithKRs == 0) {
+            return emptyScore();
+        }
+
+        for (Objective obj : objectives) {
+            // Skip objectives with no key results
+            if (obj.getKeyResults() == null || obj.getKeyResults().isEmpty()) {
+                continue;
+            }
+
+            double weight = obj.getWeight() != null ? obj.getWeight() : 100.0 / objectivesWithKRs;
+            ScoreResult objScore = calculateObjectiveScore(obj.getKeyResults());
+            weightedSum += objScore.getScore() * weight;
+            totalWeight += weight;
+        }
+
+        double avgScore = totalWeight > 0 ? weightedSum / totalWeight : 0;
+        return createScoreResult(avgScore);
+    }
+
+    private ScoreResult createScoreResult(double score) {
+        String level = getLevelForScore(score);
+        return ScoreResult.builder()
+                .score(Math.round(score * 100.0) / 100.0)
+                .level(level)
+                .color(getColorForLevel(level))
+                .percentage(scoreToPercentage(score))
+                .build();
+    }
+
+    private String getLevelForScore(double score) {
+        List<ScoreLevel> levels = getScoreLevels();
+
+        if (levels.isEmpty()) {
+            // Fallback to default logic
+            if (score >= 5.00) return "exceptional";
+            if (score >= 4.75) return "very_good";
+            if (score >= 4.50) return "good";
+            if (score >= 4.25) return "meets";
+            return "below";
+        }
+
+        // Find the appropriate level based on score value
+        for (int i = levels.size() - 1; i >= 0; i--) {
+            if (score >= levels.get(i).getScoreValue()) {
+                return levels.get(i).getName().toLowerCase().replace(" ", "_");
+            }
+        }
+
+        return levels.get(0).getName().toLowerCase().replace(" ", "_");
+    }
+
+    private String getColorForLevel(String level) {
+        List<ScoreLevel> levels = getScoreLevels();
+
+        if (levels.isEmpty()) {
+            return DEFAULT_LEVELS.getOrDefault(level, DEFAULT_LEVELS.get("below")).color();
+        }
+
+        String normalizedLevel = level.replace("_", " ");
+        for (ScoreLevel scoreLevel : levels) {
+            if (scoreLevel.getName().equalsIgnoreCase(normalizedLevel)) {
+                return scoreLevel.getColor();
+            }
+        }
+
+        return levels.get(0).getColor();
+    }
+
+    private double scoreToPercentage(double score) {
+        List<ScoreLevel> levels = getScoreLevels();
+
+        double minScore = 3.0;
+        double maxScore = 5.0;
+
+        if (!levels.isEmpty()) {
+            minScore = levels.get(0).getScoreValue();
+            maxScore = levels.get(levels.size() - 1).getScoreValue();
+        }
+
+        double range = maxScore - minScore;
+        if (range == 0) return 0.0;
+
+        return Math.round(((score - minScore) / range) * 1000.0) / 10.0;
+    }
+
+    private ScoreResult emptyScore() {
+        List<ScoreLevel> levels = getScoreLevels();
+        double minScore = levels.isEmpty() ? 4.25 : levels.get(0).getScoreValue();
+        String level = levels.isEmpty() ? "meets" : levels.get(0).getName().toLowerCase().replace(" ", "_");
+
+        return ScoreResult.builder()
+                .score(minScore)
+                .level(level)
+                .color(getColorForLevel(level))
+                .percentage(0.0)
+                .build();
+    }
+
+    private double parseDouble(String value) {
+        try {
+            return value != null ? Double.parseDouble(value) : 0.0;
+        } catch (NumberFormatException e) {
+            return 0.0;
+        }
+    }
+
+
+
+    // ============= NEW METHODS FOR MULTI-SOURCE EVALUATION =============
+
+    /**
+     * Calculate department score with multi-source evaluations
+     * Combines automatic OKR score (60%) with Director (20%) and HR (20%) evaluations
+     */
+    public DepartmentScoreResult calculateDepartmentScoreWithEvaluations(String departmentId, Collection<Objective> objectives) {
+        // 1. Calculate automatic OKR score (existing logic) - 60% weight
+        ScoreResult autoScoreResult = calculateDepartmentScore(objectives);
+        Double autoScore = autoScoreResult.getScore();
+
+        // 2. Get evaluations for this department (handle UUID conversion safely)
+        Map<EvaluatorType, Evaluation> evals;
+        try {
+            UUID targetId = UUID.fromString(departmentId);
+            evals = getEvaluationsForTarget("DEPARTMENT", targetId);
+        } catch (IllegalArgumentException e) {
+            // If departmentId is not a valid UUID, return empty evaluations
+            System.err.println("Warning: Invalid department ID format for evaluation lookup: " + departmentId);
+            evals = Map.of();
+        }
+
+        // 3. Extract Director evaluation
+        Evaluation directorEval = evals.get(EvaluatorType.DIRECTOR);
+        Double directorScore = directorEval != null ? directorEval.getNumericRating() : null;
+        Integer directorStars = directorScore != null ? convertNumericToStars(directorScore) : null;
+        String directorComment = directorEval != null ? directorEval.getComment() : null;
+
+        // 4. Extract HR evaluation
+        Evaluation hrEval = evals.get(EvaluatorType.HR);
+        String hrLetter = hrEval != null ? hrEval.getLetterRating() : null;
+        Double hrScore = hrLetter != null ? convertHrLetterToNumeric(hrLetter) : null;
+        String hrComment = hrEval != null ? hrEval.getComment() : null;
+
+        // 5. Extract Business Block evaluation (stored as 1-5 stars, convert to 4.25-5.0 scale like Director)
+        Evaluation businessBlockEval = evals.get(EvaluatorType.BUSINESS_BLOCK);
+        Integer businessBlockStars = null;
+        Double businessBlockScore = null;
+        String businessBlockComment = null;
+        if (businessBlockEval != null) {
+            // Business Block stores star rating (1-5) directly in numericRating
+            Double storedRating = businessBlockEval.getNumericRating();
+            if (storedRating != null) {
+                businessBlockStars = storedRating.intValue(); // The raw star value (1-5)
+                // Convert to 4.25-5.0 scale to match Director format: 4.25 + (stars - 1) * 0.1875
+                businessBlockScore = 4.25 + (businessBlockStars - 1) * 0.1875;
+            }
+            businessBlockComment = businessBlockEval.getComment();
+        }
+
+        // 6. Calculate weighted final score
+        Double finalScore = null;
+        if (autoScore != null && directorScore != null && hrScore != null && businessBlockScore != null) {
+            // All four evaluation sources: OKR 40%, Director 20%, HR 20%, Business Block 20%
+            finalScore = (autoScore * 0.40) + (directorScore * 0.20) + (hrScore * 0.20) + (businessBlockScore * 0.20);
+            finalScore = Math.round(finalScore * 100.0) / 100.0;
+        } else if (autoScore != null && directorScore != null && hrScore != null) {
+            // Three sources (no business block): OKR 60%, Director 20%, HR 20%
+            finalScore = (autoScore * 0.60) + (directorScore * 0.20) + (hrScore * 0.20);
+            finalScore = Math.round(finalScore * 100.0) / 100.0;
+        }
+
+        // 7. Map final score to level and color
+        String scoreLevel = finalScore != null ? getLevelForScore(finalScore) : autoScoreResult.getLevel();
+        String color = getColorForLevel(scoreLevel);
+
+        return DepartmentScoreResult.builder()
+                .automaticOkrScore(autoScore)
+                .automaticOkrPercentage(autoScoreResult.getPercentage())
+                .directorEvaluation(directorScore)
+                .directorStars(directorStars)
+                .directorComment(directorComment)
+                .hrEvaluationLetter(hrLetter)
+                .hrEvaluationNumeric(hrScore)
+                .hrComment(hrComment)
+                .businessBlockEvaluation(businessBlockScore)
+                .businessBlockStars(businessBlockStars)
+                .businessBlockComment(businessBlockComment)
+                .finalCombinedScore(finalScore)
+                .finalPercentage(finalScore != null ? scoreToPercentage(finalScore) : null)
+                .scoreLevel(scoreLevel)
+                .color(color)
+                .hasDirectorEvaluation(directorScore != null)
+                .hasHrEvaluation(hrScore != null)
+                .hasBusinessBlockEvaluation(businessBlockScore != null)
+                .build();
+    }
+
+    /**
+     * Get submitted evaluations for a target, grouped by evaluator type
+     */
+    private Map<EvaluatorType, Evaluation> getEvaluationsForTarget(String targetType, UUID targetId) {
+        log.info("Fetching evaluations for targetType={}, targetId={}", targetType, targetId);
+        List<Evaluation> evals = evaluationRepository.findByTargetTypeAndTargetIdAndStatus(
+                targetType, targetId, EvaluationStatus.SUBMITTED
+        );
+        log.info("Found {} submitted evaluations for targetId={}", evals.size(), targetId);
+        for (Evaluation e : evals) {
+            log.info("  - Evaluation: id={}, evaluatorType={}, targetId={}, status={}",
+                    e.getId(), e.getEvaluatorType(), e.getTargetId(), e.getStatus());
+        }
+        return evals.stream()
+                .collect(Collectors.toMap(
+                        Evaluation::getEvaluatorType,
+                        Function.identity(),
+                        (e1, e2) -> e1 // Keep first if duplicates (shouldn't happen due to validation)
+                ));
+    }
+
+    /**
+     * Convert HR letter grade to numeric score
+     * A = 5.0 (Outstanding), B = 4.75 (Exceeds), C = 4.5 (Meets), D = 4.25 (Needs Improvement)
+     */
+    private Double convertHrLetterToNumeric(String letter) {
+        return switch(letter) {
+            case "A" -> 5.0;
+            case "B" -> 4.75;
+            case "C" -> 4.5;
+            case "D" -> 4.25;
+            default -> null;
+        };
+    }
+
+    /**
+     * Convert Director numeric score (4.25-5.0) back to star rating (1-5) for UI display
+     */
+    private Integer convertNumericToStars(Double numericScore) {
+        if (numericScore == null || numericScore < 4.25 || numericScore > 5.0) {
+            return null;
+        }
+        // Reverse formula: stars = 1 + (numericScore - 4.25) / 0.1875
+        double stars = 1 + (numericScore - 4.25) / 0.1875;
+        return (int) Math.round(stars);
+    }
+
+}
