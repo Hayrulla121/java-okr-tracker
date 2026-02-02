@@ -3,10 +3,7 @@ package uz.garantbank.okrTrackingSystem.service;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import uz.garantbank.okrTrackingSystem.dto.CreateDivisionRequest;
-import uz.garantbank.okrTrackingSystem.dto.DivisionDTO;
-import uz.garantbank.okrTrackingSystem.dto.UpdateDivisionRequest;
-import uz.garantbank.okrTrackingSystem.dto.UserSummaryDTO;
+import uz.garantbank.okrTrackingSystem.dto.*;
 import uz.garantbank.okrTrackingSystem.dto.user.DepartmentSummaryDTO;
 import uz.garantbank.okrTrackingSystem.entity.Division;
 import uz.garantbank.okrTrackingSystem.entity.User;
@@ -24,16 +21,19 @@ public class DivisionService {
     private final DivisionRepository divisionRepository;
     private final DepartmentRepository departmentRepository;
     private final UserRepository userRepository;
+    private final ScoreCalculationService scoreCalculationService;
 
     // Constructor injection (recommended over @Autowired)
     public DivisionService(
             DivisionRepository divisionRepository,
             DepartmentRepository departmentRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            ScoreCalculationService scoreCalculationService
     ) {
         this.divisionRepository = divisionRepository;
         this.departmentRepository = departmentRepository;
         this.userRepository = userRepository;
+        this.scoreCalculationService = scoreCalculationService;
     }
 
     /**
@@ -128,6 +128,30 @@ public class DivisionService {
 
         divisionRepository.delete(division);
     }
+
+    /**
+     * Get division with calculated score
+     */
+    public DivisionWithScoreDTO getDivisionWithScore(String divisionId) {
+        Division division = divisionRepository.findByIdWithDepartments(divisionId)
+                .orElseThrow(() -> new IllegalArgumentException("Division not found"));
+
+        // Calculate division score
+        ScoreResult score = scoreCalculationService.calculateDivisionScore(
+                division.getDepartments()
+        );
+
+        DivisionWithScoreDTO dto = new DivisionWithScoreDTO();
+        dto.setId(division.getId());
+        dto.setName(division.getName());
+        dto.setScore(score.getScore());
+        dto.setScoreLevel(score.getLevel());
+        dto.setColor(score.getColor());
+        dto.setPercentage(score.getPercentage());
+
+        return dto;
+    }
+
 
     /**
      * Get all departments in a division

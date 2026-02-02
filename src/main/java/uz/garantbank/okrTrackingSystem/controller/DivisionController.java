@@ -9,6 +9,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import uz.garantbank.okrTrackingSystem.dto.CreateDivisionRequest;
 import uz.garantbank.okrTrackingSystem.dto.DivisionDTO;
+import uz.garantbank.okrTrackingSystem.dto.DivisionWithScoreDTO;
 import uz.garantbank.okrTrackingSystem.dto.UpdateDivisionRequest;
 import uz.garantbank.okrTrackingSystem.dto.user.DepartmentSummaryDTO;
 import uz.garantbank.okrTrackingSystem.service.DivisionAccessService;
@@ -111,4 +112,11 @@ public class DivisionController {
                 divisionService.getDepartmentsByDivisionId(id);
         return ResponseEntity.ok(departments);
     }
+
+    @GetMapping("/{id}/score")
+    public ResponseEntity<DivisionWithScoreDTO> getDivisionScore(@PathVariable String id) {
+        DivisionWithScoreDTO result = divisionService.getDivisionWithScore(id);
+        return ResponseEntity.ok(result);
+    }
+
 }

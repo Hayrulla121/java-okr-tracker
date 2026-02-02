@@ -405,6 +405,97 @@ public class ScoreCalculationService {
 
         return createScoreResult(avgScore);
     }
+
+    // CalculateDivisionScore
+
+    public ScoreResult calculateDivisionScore(Collection<Department> departments) {
+        if (departments == null || departments.isEmpty()) {
+            return emptyScore();
+        }
+        double weightedSum = 0;
+        double totalWeight = 0;
+
+        // Count departments with objectives for default weight calculation
+        long departmentsWithObjectives = departments.stream()
+                .filter(dept -> dept.getObjectives() != null && !dept.getObjectives().isEmpty())
+                .count();
+
+        if (departmentsWithObjectives == 0) {
+            return emptyScore();
+        }
+
+        for (Department dept : departments) {
+            // skit departments with no objectives
+            if (dept.getObjectives() == null || dept.getObjectives().isEmpty()) {
+                continue;
+            }
+
+            // Equal weight for all departments (can be customized if needed)
+            double weight = 100.0 / departmentsWithObjectives;
+
+            // Calculate department score
+            ScoreResult deptScore = calculateDepartmentScore(dept.getObjectives());
+            weightedSum += deptScore.getScore() * weight;
+            totalWeight += weight;
+
+        }
+        double avgScore = totalWeight > 0 ? weightedSum / totalWeight : 0;
+        return createScoreResult(avgScore);
+
+
+    }
+
+    /**
+     * Calculate division score with multi-source evaluations
+     * Combines automatic OKR score with evaluations (if needed)
+     */
+    public DivisionScoreResult calculateDivisionScoreWithEvaluations(
+            String divisionId,
+            Collection<Department> departments) {
+
+        // 1. Calculate automatic OKR score (aggregate of departments)
+        ScoreResult autoScoreResult = calculateDivisionScore(departments);
+        Double autoScore = autoScoreResult.getScore();
+
+        // 2. Get evaluations for this division (if you want division-level evaluations)
+        Map<EvaluatorType, Evaluation> evals;
+        try {
+            UUID targetId = UUID.fromString(divisionId);
+            evals = getEvaluationsForTarget("DIVISION", targetId);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid division ID format for evaluation lookup: {}", divisionId);
+            evals = Map.of();
+        }
+
+        // 3. Extract evaluations (similar to department logic)
+        Evaluation directorEval = evals.get(EvaluatorType.DIRECTOR);
+        Double directorScore = directorEval != null ? directorEval.getNumericRating() : null;
+        Integer directorStars = directorScore != null ? convertNumericToStars(directorScore) : null;
+
+        // 4. Calculate final score (if evaluations exist)
+        Double finalScore = null;
+        if (autoScore != null && directorScore != null) {
+            // Example: 70% auto, 30% director
+            finalScore = (autoScore * 0.70) + (directorScore * 0.30);
+            finalScore = Math.round(finalScore * 100.0) / 100.0;
+        }
+
+        String scoreLevel = finalScore != null ? getLevelForScore(finalScore) : autoScoreResult.getLevel();
+        String color = getColorForLevel(scoreLevel);
+
+        return DivisionScoreResult.builder()
+                .automaticOkrScore(autoScore)
+                .automaticOkrPercentage(autoScoreResult.getPercentage())
+                .directorEvaluation(directorScore)
+                .directorStars(directorStars)
+                .finalCombinedScore(finalScore)
+                .finalPercentage(finalScore != null ? scoreToPercentage(finalScore) : null)
+                .scoreLevel(scoreLevel)
+                .color(color)
+                .hasDirectorEvaluation(directorScore != null)
+                .build();
+    }
+
     /**
      * Calculate weighted score for a Department
      */

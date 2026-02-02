@@ -91,6 +91,20 @@ public class ScoreLevelService {
         return savedLevels.stream()
                 .map(this::toDTO)
                 .collect(Collectors.toList());
+        /**
+         * Is equivalent to this for loop:
+         *   List<ScoreLevel> newLevels = new ArrayList<>();
+         *   for (ScoreLevelDTO dto : levelDTOs) {
+         *       ScoreLevel level = ScoreLevel.builder()
+         *               .name(dto.getName())
+         *               .scoreValue(dto.getScoreValue())
+         *               .color(dto.getColor())
+         *               .displayOrder(dto.getDisplayOrder())
+         *               .isDefault(false)
+         *               .build();
+         *       newLevels.add(level);
+         *   }
+         */
     }
 
     @Transactional
