@@ -155,7 +155,7 @@ public class ExcelExportService {
 
                         // Actual value as number for formulas
                         Cell actualCell = row.createCell(5);
-                        if (kr.getMetricType() == MetricType.QUALITATIVE) {
+                        if (kr.getMetricType() == KeyResult.MetricType.QUALITATIVE) {
                             actualCell.setCellValue(kr.getActualValue() != null ? kr.getActualValue() : "E");
                         } else {
                             try {
@@ -170,7 +170,7 @@ public class ExcelExportService {
                         row.createCell(6).setCellValue(kr.getUnit() != null ? kr.getUnit() : "");
 
                         // Thresholds - dynamic based on number of levels
-                        if (kr.getMetricType() == MetricType.QUALITATIVE) {
+                        if (kr.getMetricType() == KeyResult.MetricType.QUALITATIVE) {
                             // For qualitative, use letter grades mapped to levels
                             String[] grades = {"E", "D", "C", "B", "A"};
                             for (int i = 0; i < numLevels; i++) {
