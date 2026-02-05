@@ -14,10 +14,11 @@ import java.util.Set;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@EqualsAndHashCode(exclude = {"assignedUsers", "departmentLeader", "objectives"})
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class Department {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
+    @EqualsAndHashCode.Include
     private String id;
 
     @Column(nullable = false)

@@ -3,6 +3,7 @@ package uz.garantbank.okrTrackingSystem.entity;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
@@ -15,9 +16,11 @@ import java.util.UUID;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class Division {
     @Id  // ← This is the primary key (unique identifier)
     @Column(name = "id")
+    @EqualsAndHashCode.Include
     private String id;  // Using String for UUID consistency
 
     private String name;
