@@ -125,6 +125,9 @@ public class EvaluationService {
         }
 
         evaluation.setStatus(EvaluationStatus.SUBMITTED);
+        if (evaluation.getSubmittedAt() == null) {
+            evaluation.setSubmittedAt(java.time.LocalDateTime.now());
+        }
         evaluation = evaluationRepository.save(evaluation);
 
         return convertToDTO(evaluation);
@@ -329,6 +332,7 @@ public class EvaluationService {
                 .status(evaluation.getStatus())
                 .createdAt(evaluation.getCreatedAt())
                 .updatedAt(evaluation.getUpdatedAt())
+                .submittedAt(evaluation.getSubmittedAt())
                 .build();
     }
 }

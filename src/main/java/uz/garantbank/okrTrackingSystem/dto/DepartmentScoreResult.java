@@ -6,6 +6,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 /**
  * DTO for department score with multi-source evaluations
  * Combines automatic OKR score with manual evaluations from Director, HR, and Business Block
@@ -44,4 +46,12 @@ public class DepartmentScoreResult {
     private Boolean hasDirectorEvaluation;
     private Boolean hasHrEvaluation;
     private Boolean hasBusinessBlockEvaluation;
+
+    // Evaluation timestamps
+    private LocalDateTime directorSubmittedAt;
+    private LocalDateTime directorUpdatedAt;
+    private LocalDateTime hrSubmittedAt;
+    private LocalDateTime hrUpdatedAt;
+    private LocalDateTime businessBlockSubmittedAt;
+    private LocalDateTime businessBlockUpdatedAt;
 }

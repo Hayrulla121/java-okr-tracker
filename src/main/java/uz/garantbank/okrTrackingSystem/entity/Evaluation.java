@@ -90,12 +90,20 @@ public class Evaluation {
      */
     private LocalDateTime updatedAt;
 
+    /**
+     * Timestamp when evaluation was submitted (status changed to SUBMITTED)
+     */
+    private LocalDateTime submittedAt;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
         if (status == null) {
             status = EvaluationStatus.DRAFT;
+        }
+        if (status == EvaluationStatus.SUBMITTED && submittedAt == null) {
+            submittedAt = LocalDateTime.now();
         }
     }
 

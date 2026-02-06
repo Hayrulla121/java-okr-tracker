@@ -30,4 +30,5 @@ public class EvaluationDTO {
     private EvaluationStatus status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private LocalDateTime submittedAt;
 }

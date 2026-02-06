@@ -731,6 +731,12 @@ public class ScoreCalculationService {
                 .hasDirectorEvaluation(directorScore != null)
                 .hasHrEvaluation(hrScore != null)
                 .hasBusinessBlockEvaluation(businessBlockScore != null)
+                .directorSubmittedAt(directorEval != null ? directorEval.getSubmittedAt() : null)
+                .directorUpdatedAt(directorEval != null ? directorEval.getUpdatedAt() : null)
+                .hrSubmittedAt(hrEval != null ? hrEval.getSubmittedAt() : null)
+                .hrUpdatedAt(hrEval != null ? hrEval.getUpdatedAt() : null)
+                .businessBlockSubmittedAt(businessBlockEval != null ? businessBlockEval.getSubmittedAt() : null)
+                .businessBlockUpdatedAt(businessBlockEval != null ? businessBlockEval.getUpdatedAt() : null)
                 .build();
     }
 
