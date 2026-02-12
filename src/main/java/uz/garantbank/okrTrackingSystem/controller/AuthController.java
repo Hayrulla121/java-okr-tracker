@@ -1,5 +1,12 @@
 package uz.garantbank.okrTrackingSystem.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -25,14 +32,23 @@ import uz.garantbank.okrTrackingSystem.service.UserService;
 @RequiredArgsConstructor
 @CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"})
 @Slf4j
+@Tag(name = "Authentication", description = "Login, registration, and current user operations")
 public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
     private final UserService userService;
 
-    /**
-     * Login endpoint
-     */
+    @Operation(
+            summary = "User login",
+            description = "Authenticate with username and password to receive a JWT token. " +
+                    "The token should be included in the `Authorization` header as `Bearer <token>` for all subsequent requests."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Login successful — returns JWT token and user details",
+                    content = @Content(schema = @Schema(implementation = LoginResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Invalid credentials", content = @Content)
+    })
+    @io.swagger.v3.oas.annotations.security.SecurityRequirements // No auth required for login
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
         log.info("Login attempt for user: {}", request.getUsername());
@@ -60,9 +76,17 @@ public class AuthController {
 
     }
 
-    /**
-     * Register new user (admin only)
-     */
+    @Operation(
+            summary = "Register new user",
+            description = "Create a new user account. **Requires ADMIN role.** " +
+                    "The user will be assigned the specified role and optionally linked to a department."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "User registered successfully",
+                    content = @Content(schema = @Schema(implementation = UserDTO.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid request (e.g., duplicate username)", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Only ADMIN can register users", content = @Content)
+    })
     @PostMapping("/register")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserDTO> register(@RequestBody RegisterRequest request) {
@@ -70,9 +94,15 @@ public class AuthController {
         return ResponseEntity.ok(user);
     }
 
-    /**
-     * Get current user info
-     */
+    @Operation(
+            summary = "Get current user",
+            description = "Returns the profile information of the currently authenticated user based on the JWT token."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Current user details",
+                    content = @Content(schema = @Schema(implementation = UserDTO.class))),
+            @ApiResponse(responseCode = "401", description = "Not authenticated", content = @Content)
+    })
     @GetMapping("/me")
     public ResponseEntity<UserDTO> getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();

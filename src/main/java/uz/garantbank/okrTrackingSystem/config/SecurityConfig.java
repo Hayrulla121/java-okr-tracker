@@ -104,6 +104,8 @@ public class SecurityConfig {
                         .requestMatchers("/uploads/**").permitAll() // Uploaded files (profile photos)
                         .requestMatchers("/h2-console/**").permitAll() // H2 database console
                         .requestMatchers("/error").permitAll()
+                        // Swagger UI & OpenAPI docs
+                        .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/api-docs/**", "/api-docs.yaml").permitAll()
 
                         // All other endpoints require authentication
                         .anyRequest().authenticated()

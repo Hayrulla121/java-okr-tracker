@@ -1,7 +1,7 @@
 package uz.garantbank.okrTrackingSystem.dto;
 
-
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -13,53 +13,65 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * DTO for User information with overall score calculated from assigned departments.
- * Used for the Team Overview page where Directors can view all users with their scores.
- */
+@Schema(description = "User with overall performance score — used for Team Overview page")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class UserWithScoreDTO {
+    @Schema(description = "User ID", example = "550e8400-e29b-41d4-a716-446655440000")
     private UUID id;
+
+    @Schema(description = "Username", example = "john.doe")
     private String username;
+
+    @Schema(description = "Email", example = "john.doe@garantbank.uz")
     private String email;
+
+    @Schema(description = "Full name", example = "John Doe")
     private String fullName;
+
+    @Schema(description = "User role", example = "EMPLOYEE")
     private Role role;
+
+    @Schema(description = "Profile photo URL", example = "/uploads/photo-abc.jpg")
     private String profilePhotoUrl;
+
+    @Schema(description = "Job title", example = "Senior Developer")
     private String jobTitle;
+
+    @Schema(description = "Phone number", example = "+998 90 123 45 67")
     private String phoneNumber;
+
+    @Schema(description = "Bio", example = "Backend developer")
     private String bio;
 
+    @Schema(description = "Account active status", example = "true")
     @JsonProperty("isActive")
     private boolean isActive;
 
+    @Schema(description = "Can edit assigned departments", example = "false")
     @JsonProperty("canEditAssignedDepartments")
     private boolean canEditAssignedDepartments;
 
+    @Schema(description = "Last login timestamp")
     private LocalDateTime lastLogin;
+
+    @Schema(description = "Assigned departments")
     private List<DepartmentSummaryDTO> assignedDepartments;
+
+    @Schema(description = "Account creation timestamp")
     private LocalDateTime createdAt;
 
-    /**
-     * Overall score calculated as the average of all assigned department scores
-     * (uses finalScore if available, otherwise falls back to OKR score)
-     */
+    @Schema(description = "Overall score — average of assigned department scores (3.0-5.0)", example = "4.5")
     private Double overallScore;
 
-    /**
-     * The score level name (e.g., "exceptional", "very_good", "good", "meets", "below")
-     */
+    @Schema(description = "Score level name", example = "good", allowableValues = {"below", "meets", "good", "very_good", "exceptional"})
     private String scoreLevel;
 
-    /**
-     * The color associated with the score level
-     */
+    @Schema(description = "Color associated with score level", example = "#4CAF50")
     private String scoreColor;
 
-    /**
-     * The score as a percentage (0-100)
-     */
+    @Schema(description = "Score as percentage (0-100)", example = "75.0")
     private Double scorePercentage;
 }

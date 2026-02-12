@@ -1,6 +1,16 @@
 package uz.garantbank.okrTrackingSystem.controller;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,44 +30,54 @@ import uz.garantbank.okrTrackingSystem.service.UserService;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Controller for user management operations.
- * Most operations require ADMIN role, some allow self-modification.
- */
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
 @CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"})
+@Tag(name = "Users", description = "User management, profiles, department assignments, and photo uploads")
 public class UserManagementController {
-
 
     private final UserService userService;
     private final DepartmentAccessService accessService;
 
-    /**
-     * Get all users (ADMIN only)
-     */
+    @Operation(summary = "Get all users",
+            description = "Returns all users in the system. **Requires ADMIN or DIRECTOR role.**")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "List of all users",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = UserDTO.class)))),
+            @ApiResponse(responseCode = "403", description = "Insufficient permissions", content = @Content)
+    })
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'DIRECTOR')")
     public ResponseEntity<List<UserDTO>> getAllUsers() {
         return ResponseEntity.ok(userService.getAllUsers());
     }
 
-    /**
-     * Get all users with their overall scores (ADMIN and DIRECTOR)
-     * Used for the Team Overview page
-     */
+    @Operation(summary = "Get all users with scores",
+            description = "Returns all users with their overall performance scores calculated from assigned departments. " +
+                    "Used for the Team Overview page. **Requires ADMIN or DIRECTOR role.**")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "List of users with score data",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = UserWithScoreDTO.class)))),
+            @ApiResponse(responseCode = "403", description = "Insufficient permissions", content = @Content)
+    })
     @GetMapping("/with-scores")
     @PreAuthorize("hasAnyRole('ADMIN', 'DIRECTOR')")
     public ResponseEntity<List<UserWithScoreDTO>> getAllUsersWithScores() {
         return ResponseEntity.ok(userService.getAllUsersWithScores());
     }
 
-    /**
-     * Get user by ID (ADMIN or self)
-     */
+    @Operation(summary = "Get user by ID",
+            description = "Returns user details by ID. ADMIN and DIRECTOR can view any user. Other users can only view their own profile.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "User found",
+                    content = @Content(schema = @Schema(implementation = UserDTO.class))),
+            @ApiResponse(responseCode = "403", description = "Can only view own profile", content = @Content),
+            @ApiResponse(responseCode = "404", description = "User not found", content = @Content)
+    })
     @GetMapping("/{id}")
-    public ResponseEntity<UserDTO> getUserById(@PathVariable UUID id) {
+    public ResponseEntity<UserDTO> getUserById(
+            @Parameter(description = "User ID (UUID)", required = true) @PathVariable UUID id) {
         User currentUser = accessService.getCurrentUser();
         boolean isAdmin = currentUser.getRole() == Role.ADMIN;
         boolean isDirector = currentUser.getRole() == Role.DIRECTOR;
@@ -70,35 +90,57 @@ public class UserManagementController {
         return ResponseEntity.ok(userService.getUserById(id));
     }
 
-    /**
-     * Create a new user (ADMIN only)
-     */
+    @Operation(summary = "Create user",
+            description = "Create a new user account with specified role and optional department assignments. **Requires ADMIN role.**")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "User created",
+                    content = @Content(schema = @Schema(implementation = UserDTO.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid request (e.g., duplicate username/email)", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Only ADMIN can create users", content = @Content)
+    })
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserDTO> createUser(@Valid @RequestBody CreateUserRequest request) {
         return ResponseEntity.ok(userService.createUser(request));
     }
 
-    /**
-     * Update user (ADMIN for all fields, self for profile fields only)
-     */
+    @Operation(summary = "Update user",
+            description = """
+                    Update user details.
+
+                    **ADMIN** can update all fields including role, department assignments, and account status.
+
+                    **Regular users** can only update their own profile fields: fullName, email, jobTitle, phoneNumber, bio, password."""
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "User updated",
+                    content = @Content(schema = @Schema(implementation = UserDTO.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid request", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Cannot update admin-only fields", content = @Content),
+            @ApiResponse(responseCode = "404", description = "User not found", content = @Content)
+    })
     @PutMapping("/{id}")
     public ResponseEntity<UserDTO> updateUser(
-            @PathVariable UUID id,
+            @Parameter(description = "User ID (UUID)", required = true) @PathVariable UUID id,
             @Valid @RequestBody UpdateUserRequest request) {
         User currentUser = accessService.getCurrentUser();
         return ResponseEntity.ok(userService.updateUser(id, request, currentUser));
     }
 
-    /**
-     * Delete user (ADMIN only)
-     */
+    @Operation(summary = "Delete user",
+            description = "Permanently delete a user account. Users cannot delete their own account. **Requires ADMIN role.**")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "User deleted"),
+            @ApiResponse(responseCode = "400", description = "Cannot delete your own account", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Only ADMIN can delete users", content = @Content),
+            @ApiResponse(responseCode = "404", description = "User not found", content = @Content)
+    })
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> deleteUser(@PathVariable UUID id) {
+    public ResponseEntity<Void> deleteUser(
+            @Parameter(description = "User ID (UUID)", required = true) @PathVariable UUID id) {
         User currentUser = accessService.getCurrentUser();
 
-        // Prevent self-deletion
         if (currentUser.getId().equals(id)) {
             throw new IllegalArgumentException("You cannot delete your own account");
         }
@@ -107,34 +149,51 @@ public class UserManagementController {
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * Assign departments to a user (ADMIN only)
-     */
+    @Operation(summary = "Assign departments to user",
+            description = "Assign one or more departments to a user. Replaces existing department assignments. **Requires ADMIN role.**")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Departments assigned — returns updated user",
+                    content = @Content(schema = @Schema(implementation = UserDTO.class))),
+            @ApiResponse(responseCode = "403", description = "Only ADMIN can assign departments", content = @Content),
+            @ApiResponse(responseCode = "404", description = "User or department not found", content = @Content)
+    })
     @PostMapping("/{id}/departments")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserDTO> assignDepartments(
-            @PathVariable UUID id,
+            @Parameter(description = "User ID (UUID)", required = true) @PathVariable UUID id,
             @Valid @RequestBody AssignDepartmentsRequest request) {
         return ResponseEntity.ok(userService.assignDepartments(id, request.getDepartmentIds()));
     }
 
-    /**
-     * Remove a department from a user (ADMIN only)
-     */
+    @Operation(summary = "Remove department from user",
+            description = "Remove a specific department assignment from a user. **Requires ADMIN role.**")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Department removed — returns updated user",
+                    content = @Content(schema = @Schema(implementation = UserDTO.class))),
+            @ApiResponse(responseCode = "403", description = "Only ADMIN can remove departments", content = @Content),
+            @ApiResponse(responseCode = "404", description = "User or department not found", content = @Content)
+    })
     @DeleteMapping("/{id}/departments/{deptId}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserDTO> removeDepartment(
-            @PathVariable UUID id,
-            @PathVariable String deptId) {
+            @Parameter(description = "User ID (UUID)", required = true) @PathVariable UUID id,
+            @Parameter(description = "Department ID to remove", required = true) @PathVariable String deptId) {
         return ResponseEntity.ok(userService.removeDepartment(id, deptId));
     }
 
-    /**
-     * Upload profile photo (ADMIN or self)
-     */
-    @PostMapping("/{id}/photo")
+    @Operation(summary = "Upload profile photo",
+            description = "Upload a profile photo for a user. Accepts JPEG, PNG, and GIF files up to 5MB. " +
+                    "ADMIN can upload for any user; other users can only upload their own photo.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Photo uploaded — returns updated user",
+                    content = @Content(schema = @Schema(implementation = UserDTO.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid file (wrong type or too large)", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Can only upload own photo", content = @Content)
+    })
+    @PostMapping(value = "/{id}/photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<UserDTO> uploadPhoto(
-            @PathVariable UUID id,
+            @Parameter(description = "User ID (UUID)", required = true) @PathVariable UUID id,
+            @Parameter(description = "Profile photo file (JPEG, PNG, GIF; max 5MB)")
             @RequestParam("photo") MultipartFile file) {
         User currentUser = accessService.getCurrentUser();
         boolean isAdmin = currentUser.getRole() == Role.ADMIN;
@@ -147,23 +206,31 @@ public class UserManagementController {
         return ResponseEntity.ok(userService.uploadPhoto(id, file));
     }
 
-    /**
-     * Get users by department
-     */
+    @Operation(summary = "Get users by department",
+            description = "Returns all users assigned to a specific department.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "List of users in the department",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = UserDTO.class)))),
+            @ApiResponse(responseCode = "404", description = "Department not found", content = @Content)
+    })
     @GetMapping("/by-department/{deptId}")
-    public ResponseEntity<List<UserDTO>> getUsersByDepartment(@PathVariable String deptId) {
+    public ResponseEntity<List<UserDTO>> getUsersByDepartment(
+            @Parameter(description = "Department ID", required = true) @PathVariable String deptId) {
         return ResponseEntity.ok(userService.getUsersByDepartment(deptId));
     }
 
-    /**
-     * Get current user's extended profile
-     */
+    @Operation(summary = "Get my profile",
+            description = "Returns the extended profile of the currently authenticated user, including " +
+                    "detailed department information and recent evaluations.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "User profile with detailed departments and evaluations",
+                    content = @Content(schema = @Schema(implementation = UserProfileDTO.class))),
+            @ApiResponse(responseCode = "401", description = "Not authenticated", content = @Content)
+    })
     @GetMapping("/me/profile")
     public ResponseEntity<UserProfileDTO> getMyProfile() {
         User currentUser = accessService.getCurrentUser();
         return ResponseEntity.ok(userService.getProfile(currentUser.getId()));
     }
-
-
 
 }

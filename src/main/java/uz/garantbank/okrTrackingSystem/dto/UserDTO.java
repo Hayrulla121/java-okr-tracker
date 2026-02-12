@@ -1,6 +1,7 @@
 package uz.garantbank.okrTrackingSystem.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -12,64 +13,53 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * DTO for User information (excluding password)
- */
+@Schema(description = "User information (password excluded)")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class UserDTO {
+    @Schema(description = "User ID", example = "550e8400-e29b-41d4-a716-446655440000")
     private UUID id;
+
+    @Schema(description = "Unique username", example = "john.doe")
     private String username;
+
+    @Schema(description = "Email address", example = "john.doe@garantbank.uz")
     private String email;
+
+    @Schema(description = "Full display name", example = "John Doe")
     private String fullName;
+
+    @Schema(description = "User role", example = "EMPLOYEE")
     private Role role;
 
-    /**
-     * URL to user's profile photo
-     */
+    @Schema(description = "URL to user's profile photo", example = "/uploads/photo-abc123.jpg")
     private String profilePhotoUrl;
 
-    /**
-     * User's job title
-     */
+    @Schema(description = "Job title", example = "Senior Developer")
     private String jobTitle;
 
-    /**
-     * User's phone number
-     */
+    @Schema(description = "Phone number", example = "+998 90 123 45 67")
     private String phoneNumber;
 
-    /**
-     * User's bio/description
-     */
+    @Schema(description = "User bio/description", example = "Experienced developer focused on backend systems")
     private String bio;
 
-    /**
-     * Whether the user account is active
-     */
+    @Schema(description = "Whether the user account is active", example = "true")
     @JsonProperty("isActive")
     private boolean isActive;
 
-    /**
-     * Whether the employee can edit their assigned departments
-     */
+    @Schema(description = "Whether the employee can edit their assigned departments", example = "false")
     @JsonProperty("canEditAssignedDepartments")
     private boolean canEditAssignedDepartments;
 
-    /**
-     * Timestamp of user's last login
-     */
+    @Schema(description = "Timestamp of last login", example = "2025-01-15T10:30:00")
     private LocalDateTime lastLogin;
 
-    /**
-     * List of departments the user is assigned to
-     */
+    @Schema(description = "Departments the user is assigned to")
     private List<DepartmentSummaryDTO> assignedDepartments;
 
-    /**
-     * Timestamp when user was created
-     */
+    @Schema(description = "Account creation timestamp", example = "2025-01-01T09:00:00")
     private LocalDateTime createdAt;
 }

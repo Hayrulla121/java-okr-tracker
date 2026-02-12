@@ -1,30 +1,44 @@
 package uz.garantbank.okrTrackingSystem.dto;
+
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+@Schema(description = "Division score breakdown with OKR and Director evaluation")
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class DivisionScoreResult {
-    // Automatic OKR score (calculated from departments)
+    @Schema(description = "Automatic OKR score calculated from departments (3.0-5.0)", example = "4.25")
     private Double automaticOkrScore;
+
+    @Schema(description = "Automatic OKR score as percentage (0-100%)", example = "62.5")
     private Double automaticOkrPercentage;
 
-    // Director evaluation (if applicable)
+    @Schema(description = "Director evaluation score (4.25-5.0)", example = "4.75")
     private Double directorEvaluation;
+
+    @Schema(description = "Director star rating (1-5)", example = "4")
     private Integer directorStars;
+
+    @Schema(description = "Director's comment", example = "Division performing well")
     private String directorComment;
 
-    // Final combined score
+    @Schema(description = "Final combined score", example = "4.45")
     private Double finalCombinedScore;
+
+    @Schema(description = "Final score as percentage (0-100%)", example = "72.5")
     private Double finalPercentage;
 
-    // Score level and color
+    @Schema(description = "Score level classification", example = "good")
     private String scoreLevel;
+
+    @Schema(description = "Hex color for score level", example = "#4CAF50")
     private String color;
 
-    // Flags for which evaluations exist
+    @Schema(description = "Whether a Director evaluation exists", example = "true")
     private Boolean hasDirectorEvaluation;
 }

@@ -1,5 +1,13 @@
 package uz.garantbank.okrTrackingSystem.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
 import org.springframework.http.HttpStatus;
@@ -20,6 +28,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/divisions")
 @CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"})
+@Tag(name = "Divisions", description = "Division management — top-level organizational units")
 public class DivisionController {
 
     private final DivisionService divisionService;
@@ -33,10 +42,12 @@ public class DivisionController {
         this.divisionAccessService = divisionAccessService;
     }
 
-    /**
-     * GET /api/divisions
-     * Get all divisions (all authenticated users)
-     */
+    @Operation(summary = "Get all divisions",
+            description = "Returns all divisions with their leader info and department summaries. Accessible to all authenticated users.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "List of all divisions",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = DivisionDTO.class))))
+    })
     @GetMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<DivisionDTO>> getAllDivisions() {
@@ -44,21 +55,29 @@ public class DivisionController {
         return ResponseEntity.ok(divisions);
     }
 
-    /**
-     * GET /api/divisions/{id}
-     * Get single division by ID
-     */
+    @Operation(summary = "Get division by ID",
+            description = "Returns a single division with its leader info and department summaries.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Division found",
+                    content = @Content(schema = @Schema(implementation = DivisionDTO.class))),
+            @ApiResponse(responseCode = "404", description = "Division not found", content = @Content)
+    })
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<DivisionDTO> getDivisionById(@PathVariable String id) {
+    public ResponseEntity<DivisionDTO> getDivisionById(
+            @Parameter(description = "Division ID", required = true) @PathVariable String id) {
         DivisionDTO division = divisionService.getDivisionById(id);
         return ResponseEntity.ok(division);
     }
 
-    /**
-     * POST /api/divisions
-     * Create new division (ADMIN or DIRECTOR only)
-     */
+    @Operation(summary = "Create division",
+            description = "Create a new division. Optionally assign a division leader. **Requires ADMIN or DIRECTOR role.**")
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "Division created",
+                    content = @Content(schema = @Schema(implementation = DivisionDTO.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid request (e.g., name too short)", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Insufficient permissions", content = @Content)
+    })
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'DIRECTOR')")
     public ResponseEntity<DivisionDTO> createDivision(
@@ -68,18 +87,22 @@ public class DivisionController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
-    /**
-     * PUT /api/divisions/{id}
-     * Update division (requires edit permission)
-     */
+    @Operation(summary = "Update division",
+            description = "Update a division's name and/or leader. Requires edit permission (ADMIN, DIRECTOR, or division leader).")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Division updated",
+                    content = @Content(schema = @Schema(implementation = DivisionDTO.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid request", content = @Content),
+            @ApiResponse(responseCode = "403", description = "No edit permission for this division", content = @Content),
+            @ApiResponse(responseCode = "404", description = "Division not found", content = @Content)
+    })
     @PutMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<DivisionDTO> updateDivision(
-            @PathVariable String id,
+            @Parameter(description = "Division ID", required = true) @PathVariable String id,
             @Valid @RequestBody UpdateDivisionRequest request,
             Authentication authentication
     ) {
-        // Check if user can edit this division
         if (!divisionAccessService.canUserEditDivision(authentication, id)) {
             throw new AccessDeniedException("You don't have permission to edit this division");
         }
@@ -88,33 +111,50 @@ public class DivisionController {
         return ResponseEntity.ok(updated);
     }
 
-    /**
-     * DELETE /api/divisions/{id}
-     * Delete division (ADMIN only, only if no departments)
-     */
+    @Operation(summary = "Delete division",
+            description = "Delete a division. The division must have no departments assigned. **Requires ADMIN role.**")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Division deleted"),
+            @ApiResponse(responseCode = "400", description = "Division still has departments", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Only ADMIN can delete divisions", content = @Content),
+            @ApiResponse(responseCode = "404", description = "Division not found", content = @Content)
+    })
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> deleteDivision(@PathVariable String id) {
+    public ResponseEntity<Void> deleteDivision(
+            @Parameter(description = "Division ID", required = true) @PathVariable String id) {
         divisionService.deleteDivision(id);
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * GET /api/divisions/{id}/departments
-     * Get all departments in a division
-     */
+    @Operation(summary = "Get departments in division",
+            description = "Returns a summary list of all departments belonging to the specified division.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "List of departments in the division",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = DepartmentSummaryDTO.class)))),
+            @ApiResponse(responseCode = "404", description = "Division not found", content = @Content)
+    })
     @GetMapping("/{id}/departments")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<DepartmentSummaryDTO>> getDepartmentsByDivision(
-            @PathVariable String id
+            @Parameter(description = "Division ID", required = true) @PathVariable String id
     ) {
         List<DepartmentSummaryDTO> departments =
                 divisionService.getDepartmentsByDivisionId(id);
         return ResponseEntity.ok(departments);
     }
 
+    @Operation(summary = "Get division score",
+            description = "Returns the division's aggregated score calculated from its departments' scores, " +
+                    "including score level and color classification.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Division score details",
+                    content = @Content(schema = @Schema(implementation = DivisionWithScoreDTO.class))),
+            @ApiResponse(responseCode = "404", description = "Division not found", content = @Content)
+    })
     @GetMapping("/{id}/score")
-    public ResponseEntity<DivisionWithScoreDTO> getDivisionScore(@PathVariable String id) {
+    public ResponseEntity<DivisionWithScoreDTO> getDivisionScore(
+            @Parameter(description = "Division ID", required = true) @PathVariable String id) {
         DivisionWithScoreDTO result = divisionService.getDivisionWithScore(id);
         return ResponseEntity.ok(result);
     }

@@ -1,5 +1,13 @@
 package uz.garantbank.okrTrackingSystem.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -13,21 +21,35 @@ import uz.garantbank.okrTrackingSystem.service.EvaluationService;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Controller for evaluation endpoints
- */
 @RestController
 @RequestMapping("/api/evaluations")
 @RequiredArgsConstructor
 @CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"})
+@Tag(name = "Evaluations", description = "Multi-source performance evaluations (Director, HR, Business Block)")
 public class EvaluationController {
 
     private final EvaluationService evaluationService;
 
-    /**
-     * Create a new evaluation
-     * Only Directors, HR, and Business Block leaders can create evaluations
-     */
+    @Operation(
+            summary = "Create evaluation",
+            description = """
+                    Create a new performance evaluation for a department or employee.
+
+                    **Evaluator types and their rating scales:**
+                    - `DIRECTOR` — 1-5 star rating (converted to 4.25-5.0 score)
+                    - `HR` — Letter grade: A (5.0), B (4.75), C (4.5), D (4.25)
+                    - `BUSINESS_BLOCK` — 1-5 star rating (displayed separately, not in final calculation)
+
+                    Evaluations are created in `DRAFT` status and must be submitted separately.
+
+                    **Requires:** DIRECTOR, HR, BUSINESS_BLOCK, or ADMIN role."""
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Evaluation created in DRAFT status",
+                    content = @Content(schema = @Schema(implementation = EvaluationDTO.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid request (e.g., invalid rating)", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Insufficient permissions", content = @Content)
+    })
     @PostMapping
     @PreAuthorize("hasAnyRole('DIRECTOR', 'HR', 'BUSINESS_BLOCK', 'ADMIN')")
     public ResponseEntity<EvaluationDTO> createEvaluation(
@@ -38,27 +60,43 @@ public class EvaluationController {
         return ResponseEntity.ok(evaluation);
     }
 
-    /**
-     * Submit an evaluation (change from DRAFT to SUBMITTED)
-     */
+    @Operation(
+            summary = "Submit evaluation",
+            description = "Change an evaluation from `DRAFT` to `SUBMITTED` status. " +
+                    "Once submitted, the evaluation contributes to the department/employee's final score calculation. " +
+                    "Only the original evaluator can submit their own evaluation."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Evaluation submitted",
+                    content = @Content(schema = @Schema(implementation = EvaluationDTO.class))),
+            @ApiResponse(responseCode = "403", description = "Not the evaluation owner", content = @Content),
+            @ApiResponse(responseCode = "404", description = "Evaluation not found", content = @Content)
+    })
     @PostMapping("/{id}/submit")
     @PreAuthorize("hasAnyRole('DIRECTOR', 'HR', 'BUSINESS_BLOCK', 'ADMIN')")
     public ResponseEntity<EvaluationDTO> submitEvaluation(
-            @PathVariable UUID id,
+            @Parameter(description = "Evaluation ID (UUID)", required = true) @PathVariable UUID id,
             Authentication authentication) {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         EvaluationDTO evaluation = evaluationService.submitEvaluation(id, userDetails.getId());
         return ResponseEntity.ok(evaluation);
     }
 
-    /**
-     * Update an existing evaluation
-     * Allows evaluators to modify their submitted evaluations
-     */
+    @Operation(
+            summary = "Update evaluation",
+            description = "Modify an existing evaluation. Evaluators can update their evaluations " +
+                    "even after submission (to correct mistakes). Only the original evaluator can update."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Evaluation updated",
+                    content = @Content(schema = @Schema(implementation = EvaluationDTO.class))),
+            @ApiResponse(responseCode = "403", description = "Not the evaluation owner", content = @Content),
+            @ApiResponse(responseCode = "404", description = "Evaluation not found", content = @Content)
+    })
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('DIRECTOR', 'HR', 'BUSINESS_BLOCK', 'ADMIN')")
     public ResponseEntity<EvaluationDTO> updateEvaluation(
-            @PathVariable UUID id,
+            @Parameter(description = "Evaluation ID (UUID)", required = true) @PathVariable UUID id,
             @RequestBody EvaluationCreateRequest request,
             Authentication authentication) {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
@@ -66,20 +104,32 @@ public class EvaluationController {
         return ResponseEntity.ok(evaluation);
     }
 
-    /**
-     * Get all evaluations for a specific target (department or employee)
-     */
+    @Operation(
+            summary = "Get evaluations for target",
+            description = "Retrieve all evaluations for a specific department or employee. " +
+                    "Returns evaluations from all evaluator types (Director, HR, Business Block)."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "List of evaluations for the target",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = EvaluationDTO.class))))
+    })
     @GetMapping("/target/{type}/{id}")
     public ResponseEntity<List<EvaluationDTO>> getEvaluationsForTarget(
+            @Parameter(description = "Target type", required = true, schema = @Schema(allowableValues = {"DEPARTMENT", "EMPLOYEE"}))
             @PathVariable String type,
-            @PathVariable UUID id) {
+            @Parameter(description = "Target ID (UUID)", required = true) @PathVariable UUID id) {
         List<EvaluationDTO> evaluations = evaluationService.getEvaluationsForTarget(type.toUpperCase(), id);
         return ResponseEntity.ok(evaluations);
     }
 
-    /**
-     * Get current user's evaluations
-     */
+    @Operation(
+            summary = "Get my evaluations",
+            description = "Retrieve all evaluations created by the currently authenticated user."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "List of user's evaluations",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = EvaluationDTO.class))))
+    })
     @GetMapping("/my")
     public ResponseEntity<List<EvaluationDTO>> getMyEvaluations(Authentication authentication) {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
@@ -87,9 +137,15 @@ public class EvaluationController {
         return ResponseEntity.ok(evaluations);
     }
 
-    /**
-     * Get all evaluations (admin debug endpoint)
-     */
+    @Operation(
+            summary = "Get all evaluations",
+            description = "Retrieve all evaluations in the system. **Requires ADMIN role.** Intended for debugging and administration."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "All evaluations",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = EvaluationDTO.class)))),
+            @ApiResponse(responseCode = "403", description = "Only ADMIN can view all evaluations", content = @Content)
+    })
     @GetMapping("/all")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<EvaluationDTO>> getAllEvaluations() {
@@ -97,13 +153,21 @@ public class EvaluationController {
         return ResponseEntity.ok(evaluations);
     }
 
-    /**
-     * Delete a draft evaluation
-     */
+    @Operation(
+            summary = "Delete evaluation",
+            description = "Delete a draft evaluation. Only evaluations in `DRAFT` status can be deleted. " +
+                    "Only the original evaluator can delete their evaluation."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Evaluation deleted"),
+            @ApiResponse(responseCode = "400", description = "Cannot delete non-draft evaluation", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Not the evaluation owner", content = @Content),
+            @ApiResponse(responseCode = "404", description = "Evaluation not found", content = @Content)
+    })
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('DIRECTOR', 'HR', 'BUSINESS_BLOCK', 'ADMIN')")
     public ResponseEntity<Void> deleteEvaluation(
-            @PathVariable UUID id,
+            @Parameter(description = "Evaluation ID (UUID)", required = true) @PathVariable UUID id,
             Authentication authentication) {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         evaluationService.deleteEvaluation(id, userDetails.getId());
