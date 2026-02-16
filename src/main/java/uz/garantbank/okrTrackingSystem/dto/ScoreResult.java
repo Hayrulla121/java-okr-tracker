@@ -9,10 +9,10 @@ import lombok.*;
 @AllArgsConstructor
 @Builder
 public class ScoreResult {
-    @Schema(description = "Numeric score (3.0-5.0)", example = "4.5")
+    @Schema(description = "Numeric score (0.0-1.0)", example = "0.65")
     private Double score;
 
-    @Schema(description = "Score level classification", example = "good", allowableValues = {"below", "meets", "good", "very_good", "exceptional"})
+    @Schema(description = "Score level classification", example = "на_уровне_ожиданий", allowableValues = {"не_соответствует", "ниже_ожиданий", "на_уровне_ожиданий", "превышает_ожидания", "исключительно"})
     private String level;
 
     @Schema(description = "Hex color for the score level", example = "#4CAF50")

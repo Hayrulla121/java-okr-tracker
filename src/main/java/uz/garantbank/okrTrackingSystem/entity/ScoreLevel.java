@@ -19,7 +19,7 @@ public class ScoreLevel {
     private String name; // e.g., "Below", "Meets", "Good", "Very Good", "Exceptional"
 
     @Column(nullable = false)
-    private Double scoreValue; // e.g., 3.0, 4.25, 4.5, 4.75, 5.0
+    private Double scoreValue; // e.g., 0.0, 0.31, 0.51, 0.86, 0.98
 
     @Column(nullable = false)
     private String color; // e.g., "#d9534f"

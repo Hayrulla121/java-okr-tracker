@@ -54,6 +54,10 @@ public class UserDTO {
     @JsonProperty("canEditAssignedDepartments")
     private boolean canEditAssignedDepartments;
 
+    @Schema(description = "Whether the user is in read-only mode (cannot make any edits)", example = "false")
+    @JsonProperty("readOnly")
+    private boolean readOnly;
+
     @Schema(description = "Timestamp of last login", example = "2025-01-15T10:30:00")
     private LocalDateTime lastLogin;
 

@@ -10,6 +10,12 @@ import uz.garantbank.okrTrackingSystem.dto.*;
 import uz.garantbank.okrTrackingSystem.entity.*;
 import uz.garantbank.okrTrackingSystem.repository.*;
 
+import org.springframework.web.multipart.MultipartFile;
+
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import uz.garantbank.okrTrackingSystem.security.UserDetailsImpl;
+
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -33,6 +39,12 @@ public class OkrService {
     private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
     @Autowired
     private DivisionRepository divisionRepository;
+    @Autowired
+    private FileUploadService fileUploadService;
+    @Autowired
+    private PlatformSettingService platformSettingService;
+    @Autowired
+    private DepartmentAccessService accessService;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -220,16 +232,49 @@ public class OkrService {
     }
 
     @Transactional
-    public KeyResultDTO updateKeyResultActualValue(String id, String actualValue) {
+    public KeyResultDTO updateKeyResultActualValue(String id, String actualValue, MultipartFile attachment) {
         KeyResult kr = keyResultRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Key Result not found"));
+
+        // Check if attachment is required by platform setting
+        if (platformSettingService.isAttachmentRequiredForActualValue()) {
+            if (attachment == null || attachment.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "Attachment is required when updating actual values. " +
+                    "Please upload a proof/basis file.");
+            }
+        }
+
         kr.setActualValue(actualValue);
+
+        // Handle attachment if provided
+        if (attachment != null && !attachment.isEmpty()) {
+            // Delete old attachment if exists
+            if (kr.getAttachmentUrl() != null) {
+                fileUploadService.deleteAttachment(kr.getAttachmentUrl());
+            }
+            String attachmentUrl = fileUploadService.uploadKeyResultAttachment(id, attachment);
+            kr.setAttachmentUrl(attachmentUrl);
+            kr.setAttachmentFileName(attachment.getOriginalFilename());
+        }
+
         return toKeyResultDTO(keyResultRepository.save(kr));
     }
 
     @Transactional
     public void deleteKeyResult(String id) {
         keyResultRepository.deleteById(id);
+    }
+
+    @Transactional
+    public KeyResultDTO updateKeyResultProgress(String id, Integer progress) {
+        if (progress == null || progress < 0 || progress > 100) {
+            throw new IllegalArgumentException("Progress must be between 0 and 100");
+        }
+        KeyResult kr = keyResultRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Key Result not found"));
+        kr.setProgress(progress);
+        return toKeyResultDTO(keyResultRepository.save(kr));
     }
 
     // ==================== DTO MAPPERS ====================
@@ -279,6 +324,22 @@ public class OkrService {
     }
 
     private KeyResultDTO toKeyResultDTO(KeyResult kr) {
+        // Determine if current user can view progress for this KR's department
+        Integer progress = null;
+        try {
+            String departmentId = kr.getObjective().getDepartment().getId();
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.isAuthenticated() && !auth.getPrincipal().equals("anonymousUser")) {
+                UserDetailsImpl userDetails = (UserDetailsImpl) auth.getPrincipal();
+                User currentUser = userRepository.findById(userDetails.getId()).orElse(null);
+                if (currentUser != null && accessService.canViewProgress(currentUser, departmentId)) {
+                    progress = kr.getProgress();
+                }
+            }
+        } catch (Exception e) {
+            // If we can't determine visibility, hide progress
+        }
+
         return KeyResultDTO.builder()
                 .id(kr.getId())
                 .name(kr.getName())
@@ -296,6 +357,9 @@ public class OkrService {
                 .actualValue(kr.getActualValue())
                 .objectiveId(kr.getObjective().getId())
                 .score(scoreService.calculateKeyResultScore(kr))
+                .attachmentUrl(kr.getAttachmentUrl())
+                .attachmentFileName(kr.getAttachmentFileName())
+                .progress(progress)
                 .build();
     }
 

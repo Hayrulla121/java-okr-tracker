@@ -25,11 +25,11 @@ public class ExcelExportService {
 
     // Default score levels if none in database (0.0-1.0 normalized scale)
     private static final List<DefaultLevel> DEFAULT_LEVELS = List.of(
-            new DefaultLevel("Below", 0.0, "#dc3545"),
-            new DefaultLevel("Meets", 0.25, "#f0ad4e"),
-            new DefaultLevel("Good", 0.50, "#5cb85c"),
-            new DefaultLevel("Very Good", 0.75, "#28a745"),
-            new DefaultLevel("Exceptional", 1.0, "#1e7b34")
+            new DefaultLevel("Не соответствует", 0.0, "#d9534f"),
+            new DefaultLevel("Ниже ожиданий", 0.31, "#f0ad4e"),
+            new DefaultLevel("На уровне ожиданий", 0.51, "#5cb85c"),
+            new DefaultLevel("Превышает ожидания", 0.86, "#28a745"),
+            new DefaultLevel("Исключительно", 0.98, "#1e7b34")
     );
 
     public ExcelExportService(ScoreLevelRepository scoreLevelRepository) {

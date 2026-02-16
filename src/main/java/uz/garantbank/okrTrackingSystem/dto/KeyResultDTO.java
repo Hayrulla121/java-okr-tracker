@@ -40,4 +40,13 @@ public class KeyResultDTO {
 
     @Schema(description = "Computed score based on actual value vs thresholds")
     private ScoreResult score;
+
+    @Schema(description = "URL to the attached proof/basis file", example = "/uploads/kr-attachments/kr-001_1234567890.pdf")
+    private String attachmentUrl;
+
+    @Schema(description = "Original filename of the attachment", example = "quarterly_report.pdf")
+    private String attachmentFileName;
+
+    @Schema(description = "Progress percentage (0-100), manually set by ADMIN or DEPARTMENT_LEADER. Null if the current user cannot view progress for this department.", example = "50")
+    private Integer progress;
 }

@@ -48,20 +48,20 @@ public class ScoreCalculationService {
 
     // Default fallback level definitions (used if DB is empty) - 0.0-1.0 normalized scale
     private static final Map<String, LevelInfo> DEFAULT_LEVELS = Map.of(
-            "below", new LevelInfo(0.0, 0.24, "#d9534f"),
-            "meets", new LevelInfo(0.25, 0.49, "#f0ad4e"),
-            "good", new LevelInfo(0.50, 0.74, "#5cb85c"),
-            "very_good", new LevelInfo(0.75, 0.99, "#28a745"),
-            "exceptional", new LevelInfo(1.00, 1.00, "#1e7b34")
+            "не_соответствует", new LevelInfo(0.0, 0.30, "#d9534f"),
+            "ниже_ожиданий", new LevelInfo(0.31, 0.50, "#f0ad4e"),
+            "на_уровне_ожиданий", new LevelInfo(0.51, 0.85, "#5cb85c"),
+            "превышает_ожидания", new LevelInfo(0.86, 0.97, "#28a745"),
+            "исключительно", new LevelInfo(0.98, 1.00, "#1e7b34")
     );
 
     // Qualitative grades mapping - 0.0-1.0 normalized scale
     private static final Map<String, QualitativeGrade> QUALITATIVE_GRADES = Map.of(
-            "A", new QualitativeGrade(1.00, "exceptional"),
-            "B", new QualitativeGrade(0.75, "very_good"),
-            "C", new QualitativeGrade(0.50, "good"),
-            "D", new QualitativeGrade(0.25, "meets"),
-            "E", new QualitativeGrade(0.00, "below")
+            "A", new QualitativeGrade(0.98, "исключительно"),
+            "B", new QualitativeGrade(0.86, "превышает_ожидания"),
+            "C", new QualitativeGrade(0.51, "на_уровне_ожиданий"),
+            "D", new QualitativeGrade(0.31, "ниже_ожиданий"),
+            "E", new QualitativeGrade(0.0, "не_соответствует")
     );
 
 
@@ -301,10 +301,10 @@ public class ScoreCalculationService {
 
         // Default score values for 5 levels (0.0 to 1.0 normalized scale)
         double scoreBelow = 0.0;
-        double scoreMeets = 0.25;
-        double scoreGood = 0.50;
-        double scoreVeryGood = 0.75;
-        double scoreExceptional = 1.0;
+        double scoreMeets = 0.31;
+        double scoreGood = 0.51;
+        double scoreVeryGood = 0.86;
+        double scoreExceptional = 0.98;
 
         double score;
         String level;
@@ -312,50 +312,50 @@ public class ScoreCalculationService {
         if (type == KeyResult.MetricType.HIGHER_BETTER) {
             if (actual >= exceptional) {
                 score = scoreExceptional;
-                level = "exceptional";
+                level = "исключительно";
             } else if (actual >= veryGood) {
                 double ratio = (actual - veryGood) / Math.max(exceptional - veryGood, 1);
                 score = scoreVeryGood + ratio * (scoreExceptional - scoreVeryGood);
-                level = "very_good";
+                level = "превышает_ожидания";
             } else if (actual >= good) {
                 double ratio = (actual - good) / Math.max(veryGood - good, 1);
                 score = scoreGood + ratio * (scoreVeryGood - scoreGood);
-                level = "good";
+                level = "на_уровне_ожиданий";
             } else if (actual >= meets) {
                 double ratio = (actual - meets) / Math.max(good - meets, 1);
                 score = scoreMeets + ratio * (scoreGood - scoreMeets);
-                level = "meets";
+                level = "ниже_ожиданий";
             } else if (actual >= below) {
                 double ratio = (actual - below) / Math.max(meets - below, 1);
                 score = scoreBelow + ratio * (scoreMeets - scoreBelow);
-                level = "below";
+                level = "не_соответствует";
             } else {
                 score = scoreBelow;
-                level = "below";
+                level = "не_соответствует";
             }
         } else {
             if (actual <= exceptional) {
                 score = scoreExceptional;
-                level = "exceptional";
+                level = "исключительно";
             } else if (actual <= veryGood) {
                 double ratio = 1 - (actual - exceptional) / Math.max(veryGood - exceptional, 1);
                 score = scoreVeryGood + ratio * (scoreExceptional - scoreVeryGood);
-                level = "very_good";
+                level = "превышает_ожидания";
             } else if (actual <= good) {
                 double ratio = 1 - (actual - veryGood) / Math.max(good - veryGood, 1);
                 score = scoreGood + ratio * (scoreVeryGood - scoreGood);
-                level = "good";
+                level = "на_уровне_ожиданий";
             } else if (actual <= meets) {
                 double ratio = 1 - (actual - good) / Math.max(meets - good, 1);
                 score = scoreMeets + ratio * (scoreGood - scoreMeets);
-                level = "meets";
+                level = "ниже_ожиданий";
             } else if (actual <= below) {
                 double ratio = 1 - (actual - meets) / Math.max(below - meets, 1);
                 score = scoreBelow + ratio * (scoreMeets - scoreBelow);
-                level = "below";
+                level = "не_соответствует";
             } else {
                 score = scoreBelow;
-                level = "below";
+                level = "не_соответствует";
             }
         }
 
@@ -555,11 +555,11 @@ public class ScoreCalculationService {
 
         if (levels.isEmpty()) {
             // Fallback to default logic (0.0-1.0 normalized scale)
-            if (score >= 1.00) return "exceptional";
-            if (score >= 0.75) return "very_good";
-            if (score >= 0.50) return "good";
-            if (score >= 0.25) return "meets";
-            return "below";
+            if (score >= 0.98) return "исключительно";
+            if (score >= 0.86) return "превышает_ожидания";
+            if (score >= 0.51) return "на_уровне_ожиданий";
+            if (score >= 0.31) return "ниже_ожиданий";
+            return "не_соответствует";
         }
 
         // Find the appropriate level based on score value
@@ -576,7 +576,7 @@ public class ScoreCalculationService {
         List<ScoreLevel> levels = getScoreLevels();
 
         if (levels.isEmpty()) {
-            return DEFAULT_LEVELS.getOrDefault(level, DEFAULT_LEVELS.get("below")).color();
+            return DEFAULT_LEVELS.getOrDefault(level, DEFAULT_LEVELS.get("не_соответствует")).color();
         }
 
         String normalizedLevel = level.replace("_", " ");
@@ -613,7 +613,7 @@ public class ScoreCalculationService {
         String level;
         if (levels.isEmpty()) {
             minScore = 0.0;
-            level = "below";
+            level = "не_соответствует";
         } else {
             // Find the level with the minimum score value
             ScoreLevel minLevel = levels.stream()
@@ -771,10 +771,10 @@ public class ScoreCalculationService {
         if (scoreLevels.isEmpty()) {
             // Fallback to 0.0-1.0 normalized scale
             return switch(letter) {
-                case "A" -> 1.0;
-                case "B" -> 0.75;
-                case "C" -> 0.5;
-                case "D" -> 0.25;
+                case "A" -> 0.98;
+                case "B" -> 0.86;
+                case "C" -> 0.51;
+                case "D" -> 0.31;
                 default -> null;
             };
         }

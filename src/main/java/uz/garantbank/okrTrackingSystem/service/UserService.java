@@ -78,6 +78,7 @@ public class UserService {
                 .phoneNumber(request.getPhoneNumber())
                 .bio(request.getBio())
                 .isActive(true)
+                .readOnly(request.getReadOnly() != null ? request.getReadOnly() : false)
                 .assignedDepartments(new HashSet<>())
                 .build();
 
@@ -148,6 +149,9 @@ public class UserService {
             }
             if (request.getCanEditAssignedDepartments() != null) {
                 user.setCanEditAssignedDepartments(request.getCanEditAssignedDepartments());
+            }
+            if (request.getReadOnly() != null) {
+                user.setReadOnly(request.getReadOnly());
             }
         } else {
             log.info("Non-admin user {} updating their own profile", currentUser.getUsername());
@@ -270,6 +274,7 @@ public class UserService {
                 .phoneNumber(user.getPhoneNumber())
                 .bio(user.getBio())
                 .isActive(user.isActive())
+                .readOnly(user.isReadOnly())
                 .lastLogin(user.getLastLogin())
                 .createdAt(user.getCreatedAt())
                 .assignedDepartments(deptSummaries)
@@ -365,6 +370,7 @@ public class UserService {
                 .bio(user.getBio())
                 .isActive(user.isActive())
                 .canEditAssignedDepartments(user.isCanEditAssignedDepartments())
+                .readOnly(user.isReadOnly())
                 .lastLogin(user.getLastLogin())
                 .assignedDepartments(deptSummaries)
                 .createdAt(user.getCreatedAt())
@@ -463,6 +469,7 @@ public class UserService {
                 .bio(user.getBio())
                 .isActive(user.isActive())
                 .canEditAssignedDepartments(user.isCanEditAssignedDepartments())
+                .readOnly(user.isReadOnly())
                 .lastLogin(user.getLastLogin())
                 .assignedDepartments(deptSummaries)
                 .createdAt(user.getCreatedAt())
@@ -480,12 +487,12 @@ public class UserService {
         List<ScoreLevel> levels = scoreLevelRepository.findAllByOrderByDisplayOrderAsc();
 
         if (levels.isEmpty()) {
-            // Fallback to default logic
-            if (score >= 5.00) return "exceptional";
-            if (score >= 4.75) return "very_good";
-            if (score >= 4.50) return "good";
-            if (score >= 4.25) return "meets";
-            return "below";
+            // Fallback to default logic (0.0-1.0 normalized scale)
+            if (score >= 0.98) return "исключительно";
+            if (score >= 0.86) return "превышает_ожидания";
+            if (score >= 0.51) return "на_уровне_ожиданий";
+            if (score >= 0.31) return "ниже_ожиданий";
+            return "не_соответствует";
         }
 
         // Sort by score value descending to find the appropriate level
@@ -510,10 +517,10 @@ public class UserService {
 
         if (levels.isEmpty()) {
             return switch (level) {
-                case "exceptional" -> "#1e7b34";
-                case "very_good" -> "#28a745";
-                case "good" -> "#5cb85c";
-                case "meets" -> "#f0ad4e";
+                case "исключительно" -> "#1e7b34";
+                case "превышает_ожидания" -> "#28a745";
+                case "на_уровне_ожиданий" -> "#5cb85c";
+                case "ниже_ожиданий" -> "#f0ad4e";
                 default -> "#d9534f";
             };
         }
@@ -534,12 +541,12 @@ public class UserService {
     private double scoreToPercentage(double score) {
         List<ScoreLevel> levels = scoreLevelRepository.findAllByOrderByDisplayOrderAsc();
 
-        double minScore = 3.0;
-        double maxScore = 5.0;
+        double minScore = 0.0;
+        double maxScore = 1.0;
 
         if (!levels.isEmpty()) {
-            minScore = levels.stream().mapToDouble(ScoreLevel::getScoreValue).min().orElse(3.0);
-            maxScore = levels.stream().mapToDouble(ScoreLevel::getScoreValue).max().orElse(5.0);
+            minScore = levels.stream().mapToDouble(ScoreLevel::getScoreValue).min().orElse(0.0);
+            maxScore = levels.stream().mapToDouble(ScoreLevel::getScoreValue).max().orElse(1.0);
         }
 
         double range = maxScore - minScore;

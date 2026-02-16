@@ -20,6 +20,7 @@ import uz.garantbank.okrTrackingSystem.dto.DivisionDTO;
 import uz.garantbank.okrTrackingSystem.dto.DivisionWithScoreDTO;
 import uz.garantbank.okrTrackingSystem.dto.UpdateDivisionRequest;
 import uz.garantbank.okrTrackingSystem.dto.user.DepartmentSummaryDTO;
+import uz.garantbank.okrTrackingSystem.service.DepartmentAccessService;
 import uz.garantbank.okrTrackingSystem.service.DivisionAccessService;
 import uz.garantbank.okrTrackingSystem.service.DivisionService;
 
@@ -33,13 +34,16 @@ public class DivisionController {
 
     private final DivisionService divisionService;
     private final DivisionAccessService divisionAccessService;
+    private final DepartmentAccessService departmentAccessService;
 
     public DivisionController(
             DivisionService divisionService,
-            DivisionAccessService divisionAccessService
+            DivisionAccessService divisionAccessService,
+            DepartmentAccessService departmentAccessService
     ) {
         this.divisionService = divisionService;
         this.divisionAccessService = divisionAccessService;
+        this.departmentAccessService = departmentAccessService;
     }
 
     @Operation(summary = "Get all divisions",
@@ -83,6 +87,7 @@ public class DivisionController {
     public ResponseEntity<DivisionDTO> createDivision(
             @Valid @RequestBody CreateDivisionRequest request
     ) {
+        departmentAccessService.requireWriteAccess(departmentAccessService.getCurrentUser());
         DivisionDTO created = divisionService.createDivision(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
@@ -103,6 +108,7 @@ public class DivisionController {
             @Valid @RequestBody UpdateDivisionRequest request,
             Authentication authentication
     ) {
+        departmentAccessService.requireWriteAccess(departmentAccessService.getCurrentUser());
         if (!divisionAccessService.canUserEditDivision(authentication, id)) {
             throw new AccessDeniedException("You don't have permission to edit this division");
         }
@@ -123,6 +129,7 @@ public class DivisionController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteDivision(
             @Parameter(description = "Division ID", required = true) @PathVariable String id) {
+        departmentAccessService.requireWriteAccess(departmentAccessService.getCurrentUser());
         divisionService.deleteDivision(id);
         return ResponseEntity.noContent().build();
     }

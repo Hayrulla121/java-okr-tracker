@@ -37,6 +37,21 @@ public class FileUploadService {
         "jpg", "jpeg", "png", "gif"
     );
 
+    private static final String KR_ATTACHMENTS_DIR = "kr-attachments";
+    private static final long MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB
+    private static final List<String> ALLOWED_ATTACHMENT_CONTENT_TYPES = Arrays.asList(
+        "image/jpeg", "image/jpg", "image/png", "image/gif",
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "text/plain"
+    );
+    private static final List<String> ALLOWED_ATTACHMENT_EXTENSIONS = Arrays.asList(
+        "jpg", "jpeg", "png", "gif", "pdf", "doc", "docx", "xls", "xlsx", "txt"
+    );
+
     @PostConstruct
     public void init() {
         try {
@@ -44,6 +59,11 @@ public class FileUploadService {
             if (!Files.exists(profilePhotosPath)) {
                 Files.createDirectories(profilePhotosPath);
                 log.info("Created upload directory: {}", profilePhotosPath.toAbsolutePath());
+            }
+            Path krAttachmentsPath = Paths.get(uploadDir, KR_ATTACHMENTS_DIR);
+            if (!Files.exists(krAttachmentsPath)) {
+                Files.createDirectories(krAttachmentsPath);
+                log.info("Created upload directory: {}", krAttachmentsPath.toAbsolutePath());
             }
         } catch (IOException e) {
             log.error("Could not create upload directory", e);
@@ -128,6 +148,78 @@ public class FileUploadService {
         String extension = getFileExtension(file.getOriginalFilename());
         if (!ALLOWED_EXTENSIONS.contains(extension.toLowerCase())) {
             throw new IllegalArgumentException("Invalid file extension. Only jpg, jpeg, png, and gif are allowed");
+        }
+    }
+
+    /**
+     * Upload an attachment file for a key result.
+     *
+     * @param keyResultId the key result ID
+     * @param file the uploaded file
+     * @return the URL path to access the uploaded attachment
+     * @throws IllegalArgumentException if the file is invalid
+     */
+    public String uploadKeyResultAttachment(String keyResultId, MultipartFile file) {
+        validateAttachmentFile(file);
+
+        String originalFilename = file.getOriginalFilename();
+        String extension = getFileExtension(originalFilename);
+        String newFilename = keyResultId + "_" + System.currentTimeMillis() + "." + extension;
+
+        try {
+            Path targetPath = Paths.get(uploadDir, KR_ATTACHMENTS_DIR, newFilename);
+            Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
+            log.info("Uploaded KR attachment for key result {}: {}", keyResultId, newFilename);
+            return "/uploads/" + KR_ATTACHMENTS_DIR + "/" + newFilename;
+        } catch (IOException e) {
+            log.error("Failed to upload KR attachment for key result {}", keyResultId, e);
+            throw new RuntimeException("Failed to upload attachment", e);
+        }
+    }
+
+    /**
+     * Delete a key result attachment file.
+     *
+     * @param attachmentUrl the URL of the attachment to delete
+     */
+    public void deleteAttachment(String attachmentUrl) {
+        if (attachmentUrl == null || attachmentUrl.isEmpty()) {
+            return;
+        }
+        try {
+            String filename = attachmentUrl.substring(attachmentUrl.lastIndexOf('/') + 1);
+            Path filePath = Paths.get(uploadDir, KR_ATTACHMENTS_DIR, filename);
+            if (Files.exists(filePath)) {
+                Files.delete(filePath);
+                log.info("Deleted KR attachment: {}", filename);
+            }
+        } catch (IOException e) {
+            log.warn("Failed to delete KR attachment: {}", attachmentUrl, e);
+        }
+    }
+
+    /**
+     * Validate an attachment file for key result proof/basis.
+     *
+     * @param file the file to validate
+     * @throws IllegalArgumentException if validation fails
+     */
+    private void validateAttachmentFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Attachment file is required");
+        }
+        if (file.getSize() > MAX_ATTACHMENT_SIZE) {
+            throw new IllegalArgumentException("File size exceeds maximum allowed size of 10MB");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !ALLOWED_ATTACHMENT_CONTENT_TYPES.contains(contentType.toLowerCase())) {
+            throw new IllegalArgumentException(
+                "Invalid file type. Allowed: JPEG, PNG, GIF, PDF, DOC, DOCX, XLS, XLSX, TXT");
+        }
+        String extension = getFileExtension(file.getOriginalFilename());
+        if (!ALLOWED_ATTACHMENT_EXTENSIONS.contains(extension.toLowerCase())) {
+            throw new IllegalArgumentException(
+                "Invalid file extension. Allowed: jpg, jpeg, png, gif, pdf, doc, docx, xls, xlsx, txt");
         }
     }
 

@@ -101,6 +101,16 @@ public class User {
     private boolean canEditAssignedDepartments = false;
 
     /**
+     * Whether the user is in read-only mode.
+     * Read-only users can view everything but cannot create, update, or delete
+     * objectives, key results, or evaluations.
+     * Controlled by ADMIN independently of role.
+     */
+    @Column(name = "read_only", nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private boolean readOnly = false;
+
+    /**
      * Timestamp of user's last login
      */
     @Column(name = "last_login")

@@ -18,10 +18,10 @@ public class DivisionWithScoreDTO {
     @Schema(description = "Division name", example = "Information Technology")
     private String name;
 
-    @Schema(description = "Aggregated score (3.0-5.0)", example = "4.35")
+    @Schema(description = "Aggregated score (0.0-1.0)", example = "0.65")
     private Double score;
 
-    @Schema(description = "Score level classification", example = "good", allowableValues = {"below", "meets", "good", "very_good", "exceptional"})
+    @Schema(description = "Score level classification", example = "на_уровне_ожиданий", allowableValues = {"не_соответствует", "ниже_ожиданий", "на_уровне_ожиданий", "превышает_ожидания", "исключительно"})
     private String scoreLevel;
 
     @Schema(description = "Hex color for score level", example = "#4CAF50")

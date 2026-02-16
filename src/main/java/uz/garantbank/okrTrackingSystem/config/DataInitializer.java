@@ -5,8 +5,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
+import uz.garantbank.okrTrackingSystem.entity.PlatformSetting;
 import uz.garantbank.okrTrackingSystem.entity.Role;
 import uz.garantbank.okrTrackingSystem.entity.User;
+import uz.garantbank.okrTrackingSystem.repository.PlatformSettingRepository;
 import uz.garantbank.okrTrackingSystem.repository.UserRepository;
 
 /**
@@ -20,6 +22,7 @@ public class DataInitializer implements CommandLineRunner{
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final PlatformSettingRepository platformSettingRepository;
 
     @Override
     public void run(String... args) {
@@ -52,6 +55,16 @@ public class DataInitializer implements CommandLineRunner{
             System.out.println("=".repeat(80));
         } else {
             log.info("Users already exist in database, count: {}", userRepository.count());
+        }
+
+        // Seed default platform settings if they don't exist
+        if (!platformSettingRepository.existsById("REQUIRE_ATTACHMENT_FOR_ACTUAL_VALUE")) {
+            platformSettingRepository.save(PlatformSetting.builder()
+                    .settingKey("REQUIRE_ATTACHMENT_FOR_ACTUAL_VALUE")
+                    .settingValue("false")
+                    .description("When enabled, users must upload a proof/basis file when updating Key Result actual values")
+                    .build());
+            log.info("Created default platform setting: REQUIRE_ATTACHMENT_FOR_ACTUAL_VALUE=false");
         }
     }
 }

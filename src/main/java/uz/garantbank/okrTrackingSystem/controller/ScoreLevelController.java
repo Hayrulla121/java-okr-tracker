@@ -26,7 +26,7 @@ public class ScoreLevelController {
 
     @Operation(summary = "Get all score levels",
             description = "Returns all configured score levels ordered by display order. " +
-                    "Default levels: Below (3.0), Meets (4.25), Good (4.5), Very Good (4.75), Exceptional (5.0).")
+                    "Default levels: Не соответствует (0-0.3), Ниже ожиданий (0.31-0.50), На уровне ожиданий (0.51-0.85), Превышает ожидания (0.86-0.97), Исключительно (0.98-1.0).")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "List of score levels",
                     content = @Content(array = @ArraySchema(schema = @Schema(implementation = ScoreLevelDTO.class))))
@@ -50,7 +50,7 @@ public class ScoreLevelController {
     }
 
     @Operation(summary = "Reset score levels to defaults",
-            description = "Reset all score levels to the system defaults: Below (3.0), Meets (4.25), Good (4.5), Very Good (4.75), Exceptional (5.0).")
+            description = "Reset all score levels to the system defaults: Не соответствует (0-0.3), Ниже ожиданий (0.31-0.50), На уровне ожиданий (0.51-0.85), Превышает ожидания (0.86-0.97), Исключительно (0.98-1.0).")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Score levels reset to defaults")
     })

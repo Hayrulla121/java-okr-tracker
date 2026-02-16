@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import uz.garantbank.okrTrackingSystem.dto.DepartmentDTO;
 import uz.garantbank.okrTrackingSystem.dto.DepartmentScoreResult;
 import uz.garantbank.okrTrackingSystem.dto.KeyResultDTO;
@@ -80,6 +81,7 @@ public class OkrController {
     @PostMapping("/departments")
     @PreAuthorize("hasAnyRole('ADMIN', 'DIRECTOR')")
     public ResponseEntity<DepartmentDTO> createDepartment(@RequestBody DepartmentDTO dto) {
+        accessService.requireWriteAccess(accessService.getCurrentUser());
         return ResponseEntity.ok(okrService.createDepartment(dto));
     }
 
@@ -114,6 +116,7 @@ public class OkrController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteDepartment(
             @Parameter(description = "Department ID", required = true) @PathVariable String id) {
+        accessService.requireWriteAccess(accessService.getCurrentUser());
         okrService.deleteDepartment(id);
         return ResponseEntity.noContent().build();
     }
@@ -241,28 +244,54 @@ public class OkrController {
 
     @Tag(name = "Key Results")
     @Operation(summary = "Update key result actual value",
-            description = "Update only the actual/measured value of a key result. " +
+            description = "Update the actual/measured value of a key result, optionally with a proof attachment. " +
+                    "If the platform setting REQUIRE_ATTACHMENT_FOR_ACTUAL_VALUE is enabled, " +
+                    "an attachment file is mandatory. " +
                     "The score is automatically recalculated based on the new value and the configured thresholds.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Actual value updated and score recalculated",
                     content = @Content(schema = @Schema(implementation = KeyResultDTO.class))),
+            @ApiResponse(responseCode = "400", description = "Missing required attachment or invalid file",
+                    content = @Content),
             @ApiResponse(responseCode = "403", description = "No edit permission", content = @Content),
             @ApiResponse(responseCode = "404", description = "Key result not found", content = @Content)
     })
-    @PutMapping("/key-results/{id}/actual-value")
+    @PutMapping(value = "/key-results/{id}/actual-value",
+                consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<KeyResultDTO> updateKeyResultActualValue(
             @Parameter(description = "Key Result ID", required = true) @PathVariable String id,
-            @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                    description = "Map with key `actualValue` containing the new measured value",
-                    content = @Content(schema = @Schema(example = "{\"actualValue\": \"95.5\"}"))
-            )
-            @RequestBody java.util.Map<String, String> payload) {
+            @Parameter(description = "The new actual value") @RequestParam("actualValue") String actualValue,
+            @Parameter(description = "Proof/basis attachment file (PDF, DOC, DOCX, XLS, XLSX, images)")
+            @RequestParam(value = "file", required = false) MultipartFile file) {
         String departmentId = getDepartmentIdFromKeyResult(id);
         User currentUser = accessService.getCurrentUser();
         if (!accessService.canEditDepartment(currentUser, departmentId)) {
             throw new AccessDeniedException("You do not have permission to edit key results in this department");
         }
-        return ResponseEntity.ok(okrService.updateKeyResultActualValue(id, payload.get("actualValue")));
+        return ResponseEntity.ok(okrService.updateKeyResultActualValue(id, actualValue, file));
+    }
+
+    @Tag(name = "Key Results")
+    @Operation(summary = "Update key result progress",
+            description = "Update the progress percentage (0-100) of a key result. " +
+                    "Only ADMIN or DEPARTMENT_LEADER assigned to the department can update progress.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Progress updated",
+                    content = @Content(schema = @Schema(implementation = KeyResultDTO.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid progress value (must be 0-100)", content = @Content),
+            @ApiResponse(responseCode = "403", description = "No permission to edit progress", content = @Content),
+            @ApiResponse(responseCode = "404", description = "Key result not found", content = @Content)
+    })
+    @PutMapping("/key-results/{id}/progress")
+    public ResponseEntity<KeyResultDTO> updateKeyResultProgress(
+            @Parameter(description = "Key Result ID", required = true) @PathVariable String id,
+            @RequestBody java.util.Map<String, Integer> body) {
+        String departmentId = getDepartmentIdFromKeyResult(id);
+        User currentUser = accessService.getCurrentUser();
+        if (!accessService.canEditProgress(currentUser, departmentId)) {
+            throw new AccessDeniedException("Only ADMIN or DEPARTMENT_LEADER can update progress");
+        }
+        return ResponseEntity.ok(okrService.updateKeyResultProgress(id, body.get("progress")));
     }
 
     @Tag(name = "Key Results")
@@ -329,6 +358,7 @@ public class OkrController {
     @PostMapping("/demo/load")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<DepartmentDTO>> loadDemoData() {
+        accessService.requireWriteAccess(accessService.getCurrentUser());
         return ResponseEntity.ok(okrService.loadDemoData());
     }
 

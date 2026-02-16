@@ -54,6 +54,10 @@ public class UserWithScoreDTO {
     @JsonProperty("canEditAssignedDepartments")
     private boolean canEditAssignedDepartments;
 
+    @Schema(description = "Whether the user is in read-only mode", example = "false")
+    @JsonProperty("readOnly")
+    private boolean readOnly;
+
     @Schema(description = "Last login timestamp")
     private LocalDateTime lastLogin;
 
@@ -63,10 +67,10 @@ public class UserWithScoreDTO {
     @Schema(description = "Account creation timestamp")
     private LocalDateTime createdAt;
 
-    @Schema(description = "Overall score — average of assigned department scores (3.0-5.0)", example = "4.5")
+    @Schema(description = "Overall score — average of assigned department scores (0.0-1.0)", example = "0.65")
     private Double overallScore;
 
-    @Schema(description = "Score level name", example = "good", allowableValues = {"below", "meets", "good", "very_good", "exceptional"})
+    @Schema(description = "Score level name", example = "на_уровне_ожиданий", allowableValues = {"не_соответствует", "ниже_ожиданий", "на_уровне_ожиданий", "превышает_ожидания", "исключительно"})
     private String scoreLevel;
 
     @Schema(description = "Color associated with score level", example = "#4CAF50")

@@ -68,6 +68,8 @@ tags:
     \ HR (A/B/C/D letter grades → 5.0/4.75/4.5/4.25), and Business Block assessments."
 - name: Demo Data
   description: Load sample/demo data for testing purposes. Admin only.
+- name: Platform Settings
+  description: Global platform configuration (ADMIN only for writes)
 - name: Score Levels
   description: Score level configuration for the OKR scoring system
 - name: Departments
@@ -212,6 +214,59 @@ paths:
                   $ref: "#/components/schemas/ScoreLevelDTO"
         "400":
           description: Invalid configuration
+  /api/platform-settings/{key}:
+    get:
+      tags:
+      - Platform Settings
+      summary: Get a platform setting by key
+      description: Returns a single platform setting by its key.
+      operationId: getSetting
+      parameters:
+      - name: key
+        in: path
+        description: Setting key
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Setting found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSetting"
+        "404":
+          description: Setting not found
+    put:
+      tags:
+      - Platform Settings
+      summary: Update a platform setting
+      description: Create or update a platform setting. **Requires ADMIN role.**
+      operationId: updateSetting
+      parameters:
+      - name: key
+        in: path
+        description: Setting key
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
+        required: true
+      responses:
+        "200":
+          description: Setting updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSetting"
+        "403":
+          description: Only ADMIN can update settings
   /api/objectives/{id}:
     put:
       tags:
@@ -318,14 +373,14 @@ paths:
           description: No edit permission
         "404":
           description: Key result not found
-  /api/key-results/{id}/actual-value:
+  /api/key-results/{id}/progress:
     put:
       tags:
       - Key Results
-      summary: Update key result actual value
-      description: Update only the actual/measured value of a key result. The score
-        is automatically recalculated based on the new value and the configured thresholds.
-      operationId: updateKeyResultActualValue
+      summary: Update key result progress
+      description: "Update the progress percentage (0-100) of a key result. Only ADMIN\
+        \ or DEPARTMENT_LEADER assigned to the department can update progress."
+      operationId: updateKeyResultProgress
       parameters:
       - name: id
         in: path
@@ -334,14 +389,68 @@ paths:
         schema:
           type: string
       requestBody:
-        description: Map with key `actualValue` containing the new measured value
         content:
           application/json:
             schema:
-              type: string
-              example:
-                actualValue: "95.5"
+              type: object
+              properties:
+                progress:
+                  type: integer
+                  format: int32
+                  description: Progress percentage (0-100)
+                  example: 50
+                  minimum: 0
+                  maximum: 100
+              required:
+              - progress
         required: true
+      responses:
+        "200":
+          description: Progress updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyResultDTO"
+        "400":
+          description: Invalid progress value (must be 0-100)
+        "403":
+          description: Only ADMIN or DEPARTMENT_LEADER can update progress
+        "404":
+          description: Key result not found
+  /api/key-results/{id}/actual-value:
+    put:
+      tags:
+      - Key Results
+      summary: Update key result actual value
+      description: "Update the actual/measured value of a key result, optionally with\
+        \ a proof attachment. If the platform setting REQUIRE_ATTACHMENT_FOR_ACTUAL_VALUE\
+        \ is enabled, an attachment file is mandatory. The score is automatically\
+        \ recalculated based on the new value and the configured thresholds."
+      operationId: updateKeyResultActualValue
+      parameters:
+      - name: id
+        in: path
+        description: Key Result ID
+        required: true
+        schema:
+          type: string
+      - name: actualValue
+        in: query
+        description: The new actual value
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: "Proof/basis attachment file (PDF, DOC, DOCX, XLS,\
+                    \ XLSX, images)"
       responses:
         "200":
           description: Actual value updated and score recalculated
@@ -349,6 +458,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/KeyResultDTO"
+        "400":
+          description: Missing required attachment or invalid file
         "403":
           description: No edit permission
         "404":
@@ -1034,6 +1145,23 @@ paths:
                   $ref: "#/components/schemas/UserDTO"
         "404":
           description: Department not found
+  /api/platform-settings:
+    get:
+      tags:
+      - Platform Settings
+      summary: Get all platform settings
+      description: Returns all platform-wide configuration settings. Accessible to
+        all authenticated users.
+      operationId: getAllSettings
+      responses:
+        "200":
+          description: List of all settings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlatformSetting"
   /api/export/excel:
     get:
       tags:
@@ -1305,6 +1433,10 @@ components:
           type: boolean
           description: Whether user can edit assigned departments (ADMIN only)
           example: true
+        readOnly:
+          type: boolean
+          description: Whether user is in read-only mode (ADMIN only)
+          example: false
     DepartmentSummaryDTO:
       type: object
       description: Lightweight department reference
@@ -1390,6 +1522,10 @@ components:
           type: boolean
           description: Whether the employee can edit their assigned departments
           example: false
+        readOnly:
+          type: boolean
+          description: Whether the user is in read-only mode (cannot make any edits)
+          example: false
     ScoreLevelDTO:
       type: object
       description: Score level configuration entry
@@ -1422,6 +1558,15 @@ components:
           format: int32
           description: Display order (lower = displayed first)
           example: 3
+    PlatformSetting:
+      type: object
+      properties:
+        settingKey:
+          type: string
+        settingValue:
+          type: string
+        description:
+          type: string
     KeyResultDTO:
       type: object
       description: "Key Result with thresholds, actual value, and computed score"
@@ -1469,6 +1614,22 @@ components:
         score:
           $ref: "#/components/schemas/ScoreResult"
           description: Computed score based on actual value vs thresholds
+        attachmentUrl:
+          type: string
+          description: URL to the attached proof/basis file
+          example: /uploads/kr-attachments/kr-001_1234567890.pdf
+        attachmentFileName:
+          type: string
+          description: Original filename of the attachment
+          example: quarterly_report.pdf
+        progress:
+          type: integer
+          format: int32
+          description: "Progress percentage (0-100), manually set by ADMIN or DEPARTMENT_LEADER.\
+            \ Null if the current user cannot view progress for this department."
+          example: 50
+          minimum: 0
+          maximum: 100
     ObjectiveDTO:
       type: object
       description: Objective with key results and computed score
@@ -1853,6 +2014,10 @@ components:
           type: string
           description: Bio/description
           example: Experienced backend developer
+        readOnly:
+          type: boolean
+          description: Whether user starts in read-only mode (defaults to false)
+          example: false
       required:
       - email
       - fullName
@@ -2057,6 +2222,10 @@ components:
           type: boolean
           description: Can edit assigned departments
           example: false
+        readOnly:
+          type: boolean
+          description: Whether the user is in read-only mode
+          example: false
     UserProfileDTO:
       type: object
       description: Extended user profile with detailed department info and recent
@@ -2135,6 +2304,10 @@ components:
           type: boolean
           description: Account active status
           example: true
+        readOnly:
+          type: boolean
+          description: Whether the user is in read-only mode
+          example: false
     DivisionWithScoreDTO:
       type: object
       description: Division with aggregated score from its departments

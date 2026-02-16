@@ -94,7 +94,7 @@ public class OpenApiConfig {
                                         "department assignments, photo uploads, and score overview."),
                         new Tag().name("Score Levels")
                                 .description("Score level configuration for the scoring system. " +
-                                        "Defines levels: Below (3.0), Meets (4.25), Good (4.5), Very Good (4.75), Exceptional (5.0)."),
+                                        "Defines levels: Не соответствует (0-0.3), Ниже ожиданий (0.31-0.50), На уровне ожиданий (0.51-0.85), Превышает ожидания (0.86-0.97), Исключительно (0.98-1.0)."),
                         new Tag().name("Export")
                                 .description("Data export operations. Currently supports Excel (.xlsx) export of all OKR data."),
                         new Tag().name("Demo Data")

@@ -53,4 +53,7 @@ public class CreateUserRequest {
 
     @Schema(description = "Bio/description", example = "Experienced backend developer")
     private String bio;
+
+    @Schema(description = "Whether user starts in read-only mode (defaults to false)", example = "false")
+    private Boolean readOnly;
 }

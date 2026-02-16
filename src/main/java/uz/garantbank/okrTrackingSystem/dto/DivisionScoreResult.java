@@ -12,13 +12,13 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class DivisionScoreResult {
-    @Schema(description = "Automatic OKR score calculated from departments (3.0-5.0)", example = "4.25")
+    @Schema(description = "Automatic OKR score calculated from departments (0.0-1.0)", example = "0.65")
     private Double automaticOkrScore;
 
     @Schema(description = "Automatic OKR score as percentage (0-100%)", example = "62.5")
     private Double automaticOkrPercentage;
 
-    @Schema(description = "Director evaluation score (4.25-5.0)", example = "4.75")
+    @Schema(description = "Director evaluation score (0.0-1.0)", example = "0.86")
     private Double directorEvaluation;
 
     @Schema(description = "Director star rating (1-5)", example = "4")
@@ -27,7 +27,7 @@ public class DivisionScoreResult {
     @Schema(description = "Director's comment", example = "Division performing well")
     private String directorComment;
 
-    @Schema(description = "Final combined score", example = "4.45")
+    @Schema(description = "Final combined score", example = "0.72")
     private Double finalCombinedScore;
 
     @Schema(description = "Final score as percentage (0-100%)", example = "72.5")

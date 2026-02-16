@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import uz.garantbank.okrTrackingSystem.dto.EvaluationCreateRequest;
 import uz.garantbank.okrTrackingSystem.dto.EvaluationDTO;
 import uz.garantbank.okrTrackingSystem.security.UserDetailsImpl;
+import uz.garantbank.okrTrackingSystem.service.DepartmentAccessService;
 import uz.garantbank.okrTrackingSystem.service.EvaluationService;
 
 import java.util.List;
@@ -29,6 +30,7 @@ import java.util.UUID;
 public class EvaluationController {
 
     private final EvaluationService evaluationService;
+    private final DepartmentAccessService accessService;
 
     @Operation(
             summary = "Create evaluation",
@@ -55,6 +57,7 @@ public class EvaluationController {
     public ResponseEntity<EvaluationDTO> createEvaluation(
             @RequestBody EvaluationCreateRequest request,
             Authentication authentication) {
+        accessService.requireWriteAccess(accessService.getCurrentUser());
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         EvaluationDTO evaluation = evaluationService.createEvaluation(request, userDetails.getId());
         return ResponseEntity.ok(evaluation);
@@ -77,6 +80,7 @@ public class EvaluationController {
     public ResponseEntity<EvaluationDTO> submitEvaluation(
             @Parameter(description = "Evaluation ID (UUID)", required = true) @PathVariable UUID id,
             Authentication authentication) {
+        accessService.requireWriteAccess(accessService.getCurrentUser());
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         EvaluationDTO evaluation = evaluationService.submitEvaluation(id, userDetails.getId());
         return ResponseEntity.ok(evaluation);
@@ -99,6 +103,7 @@ public class EvaluationController {
             @Parameter(description = "Evaluation ID (UUID)", required = true) @PathVariable UUID id,
             @RequestBody EvaluationCreateRequest request,
             Authentication authentication) {
+        accessService.requireWriteAccess(accessService.getCurrentUser());
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         EvaluationDTO evaluation = evaluationService.updateEvaluation(id, request, userDetails.getId());
         return ResponseEntity.ok(evaluation);
@@ -169,6 +174,7 @@ public class EvaluationController {
     public ResponseEntity<Void> deleteEvaluation(
             @Parameter(description = "Evaluation ID (UUID)", required = true) @PathVariable UUID id,
             Authentication authentication) {
+        accessService.requireWriteAccess(accessService.getCurrentUser());
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         evaluationService.deleteEvaluation(id, userDetails.getId());
         return ResponseEntity.noContent().build();

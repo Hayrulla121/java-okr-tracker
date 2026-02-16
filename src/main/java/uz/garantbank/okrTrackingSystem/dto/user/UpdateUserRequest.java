@@ -49,6 +49,10 @@ public class UpdateUserRequest {
     @JsonProperty("canEditAssignedDepartments")
     private Boolean canEditAssignedDepartments;
 
+    @Schema(description = "Whether user is in read-only mode (ADMIN only)", example = "false")
+    @JsonProperty("readOnly")
+    private Boolean readOnly;
+
     @Schema(description = "New password (optional, for password change)", example = "newSecurePass456")
     private String password;
 }

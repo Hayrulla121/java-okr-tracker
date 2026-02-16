@@ -15,10 +15,10 @@ public class ScoreLevelDTO {
     @Schema(description = "Score level ID", example = "sl-001")
     private String id;
 
-    @Schema(description = "Level name", example = "Good", allowableValues = {"Below", "Meets", "Good", "Very Good", "Exceptional"})
+    @Schema(description = "Level name", example = "На уровне ожиданий", allowableValues = {"Не соответствует", "Ниже ожиданий", "На уровне ожиданий", "Превышает ожидания", "Исключительно"})
     private String name;
 
-    @Schema(description = "Numeric score value for this level", example = "4.5")
+    @Schema(description = "Numeric score value (lower bound) for this level", example = "0.51")
     private Double scoreValue;
 
     @Schema(description = "Hex color code for UI display", example = "#4CAF50")

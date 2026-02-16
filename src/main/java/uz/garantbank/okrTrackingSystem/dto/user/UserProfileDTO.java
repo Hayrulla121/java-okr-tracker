@@ -52,6 +52,10 @@ public class UserProfileDTO {
     @JsonProperty("isActive")
     private boolean isActive;
 
+    @Schema(description = "Whether the user is in read-only mode", example = "false")
+    @JsonProperty("readOnly")
+    private boolean readOnly;
+
     @Schema(description = "Last login timestamp")
     private LocalDateTime lastLogin;
 
